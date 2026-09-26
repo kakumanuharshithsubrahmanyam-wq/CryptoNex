@@ -16,15 +16,31 @@ KEY_ESTABLISHMENT_ROLE = "key_establishment"
 UNKNOWN_ROLE = "unknown"
 
 SIGNATURE_ALGORITHMS = frozenset({"DSA", "ECDSA", "Ed25519", "Ed448"})
-KEY_ESTABLISHMENT_ALGORITHMS = frozenset({"ECDH", "Diffie-Hellman"})
+KEY_ESTABLISHMENT_ALGORITHMS = frozenset({"ECDH", "Diffie-Hellman", "X25519"})
 MULTI_ROLE_ALGORITHMS = frozenset({"RSA"})
 LEGACY_WEAK = frozenset({"MD5", "DES", "RC4"})
 LEGACY_HASH = frozenset({"MD5", "SHA-1"})
 LEGACY_CIPHER = frozenset({"DES", "3DES", "Blowfish"})
-MODERN_SYMMETRIC = frozenset({"AES", "ChaCha20", "ChaCha20-Poly1305"})
+MODERN_SYMMETRIC = frozenset({"AES", "ChaCha20", "ChaCha20-Poly1305", "XChaCha20-Poly1305"})
 MODERN_HASH = frozenset({"SHA-224", "SHA-256", "SHA-384", "SHA-512", "SHA-3", "BLAKE2", "BLAKE3"})
 MAC_ALGORITHMS = frozenset({"HMAC", "CMAC", "Poly1305"})
 KDF_ALGORITHMS = frozenset({"PBKDF2", "scrypt", "Argon2", "HKDF"})
+DEPLOYED_PQC = frozenset({"ML-KEM", "ML-DSA", "SLH-DSA"})
+HYBRID_ALGORITHMS = frozenset({"X-Wing", "HPKE"})
+MANUAL_PUBLIC_KEY = SIGNATURE_ALGORITHMS | KEY_ESTABLISHMENT_ALGORITHMS | MULTI_ROLE_ALGORITHMS
+
+CLASSICAL_COUNTERPARTS: dict[str, tuple[str, ...]] = {
+    "MD5": ("SHA-256", "SHA-384", "SHA-512", "SHA-3", "BLAKE2", "BLAKE3"),
+    "SHA-1": ("SHA-256", "SHA-384", "SHA-512", "SHA-3", "BLAKE2", "BLAKE3"),
+    "DES": ("AES", "ChaCha20-Poly1305"),
+    "3DES": ("AES", "ChaCha20-Poly1305"),
+    "Blowfish": ("AES", "ChaCha20-Poly1305"),
+    "RC4": ("AES", "ChaCha20-Poly1305"),
+}
+DEFAULT_CLASSICAL_REPLACEMENT = {
+    "MD5": "SHA-256",
+    "SHA-1": "SHA-256",
+}
 
 _USAGE_TO_ROLE = {
     "signing": SIGNATURE_ROLE,
@@ -133,6 +149,29 @@ def advise(finding) -> MigrationAdvice:
             candidates=(),
             explanation="No algorithm was identified on this finding.",
             warnings=("Replacement candidates cannot be selected without an identified algorithm.",),
+        )
+    if algorithm in DEPLOYED_PQC:
+        return MigrationAdvice(
+            algorithm=algorithm,
+            role=role,
+            category="post_quantum",
+            replaceable=False,
+            candidates=(),
+            explanation=(
+                f"{algorithm} is already a registered post-quantum primitive. "
+                "CryptoNex does not recommend replacing it with another PQC algorithm by default."
+            ),
+            warnings=("Presence of a PQC primitive is not a claim that the repository is quantum-safe.",),
+        )
+    if algorithm in HYBRID_ALGORITHMS:
+        return MigrationAdvice(
+            algorithm=algorithm,
+            role=role,
+            category="hybrid",
+            replaceable=False,
+            candidates=(),
+            explanation=f"{algorithm} is a hybrid construction. It is not a one-line replacement target.",
+            warnings=("Hybrid constructions require protocol-level review, not a local identifier swap.",),
         )
     if algorithm in MODERN_SYMMETRIC:
         return MigrationAdvice(
@@ -305,6 +344,27 @@ def candidate_dicts(advice: MigrationAdvice) -> list[dict]:
             body.update({key: value for key, value in pqc_as_dict(spec).items() if key not in body})
         payload.append(body)
     return payload
+
+
+def registered_replacement_names(advice: MigrationAdvice) -> set[str]:
+    names = {item.algorithm for item in advice.candidates}
+    names.update(CLASSICAL_COUNTERPARTS.get(advice.algorithm, ()))
+    return names
+
+
+def is_registered_replacement(advice: MigrationAdvice, replacement: str | None) -> bool:
+    canonical = canonical_algorithm(replacement)
+    if canonical is None:
+        return False
+    return canonical in registered_replacement_names(advice)
+
+
+def default_replacement(advice: MigrationAdvice) -> str | None:
+    if advice.algorithm in DEFAULT_CLASSICAL_REPLACEMENT:
+        return DEFAULT_CLASSICAL_REPLACEMENT[advice.algorithm]
+    if len(advice.candidates) == 1:
+        return advice.candidates[0].algorithm
+    return None
 
 
 def current_parameters(finding) -> dict:

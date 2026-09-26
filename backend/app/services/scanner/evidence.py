@@ -68,7 +68,7 @@ def mask_comments(source: str, style: str) -> tuple[str, list[tuple[int, int]]]:
             index = end
             continue
         current = chars[index]
-        if current in {'"', "'"} or (style == "go" and current == "`"):
+        if current == '"' or (style != "rust" and current == "'") or (style == "go" and current == "`"):
             end = _skip_string(chars, index, current)
             spans.append((index, end))
             index = end
@@ -76,10 +76,10 @@ def mask_comments(source: str, style: str) -> tuple[str, list[tuple[int, int]]]:
         if style == "python" and current == "#":
             index = _blank_until_newline(chars, index)
             continue
-        if style in {"c", "go"} and current == "/" and _peek(chars, index) == "/":
+        if style in {"c", "go", "rust"} and current == "/" and _peek(chars, index) == "/":
             index = _blank_until_newline(chars, index)
             continue
-        if style in {"c", "go"} and current == "/" and _peek(chars, index) == "*":
+        if style in {"c", "go", "rust"} and current == "/" and _peek(chars, index) == "*":
             chars[index] = " "
             chars[index + 1] = " "
             index = _blank_until(chars, index + 2, "*/")

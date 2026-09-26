@@ -9,6 +9,7 @@ from app.services.artifacts.certificates import (
     is_binary_container_name,
     is_certificate_name,
 )
+from app.services.artifacts.classify import annotate_artifact
 from app.services.artifacts.types import RawArtifact
 from app.services.artifacts.protocols import detect_protocols
 
@@ -26,6 +27,7 @@ _CONFIG_STYLE = {
     ".js": "c",
     ".ts": "c",
     ".go": "c",
+    ".rs": "rust",
     ".c": "c",
     ".cpp": "c",
     ".h": "c",
@@ -56,11 +58,11 @@ def comment_style(file_path: str) -> str:
 def detect_text_artifacts(source: str, file_path: str, settings: Settings) -> list[RawArtifact]:
     artifacts = detect_certificate_text(source, file_path, settings)
     artifacts.extend(detect_protocols(source, file_path, settings, comment_style(file_path)))
-    return _dedupe(artifacts)
+    return _dedupe(annotate_artifact(item) for item in artifacts)
 
 
 def detect_binary_artifacts(data: bytes, file_path: str, settings: Settings) -> list[RawArtifact]:
-    return _dedupe(detect_certificate_bytes(data, file_path, settings))
+    return _dedupe(annotate_artifact(item) for item in detect_certificate_bytes(data, file_path, settings))
 
 
 _PROTOCOL_SUFFIXES = {".xml", ".properties", ".conf", ".cnf", ".pub"}
@@ -80,7 +82,7 @@ def is_artifact_filename(file_path: str) -> bool:
     )
 
 
-def _dedupe(artifacts: list[RawArtifact]) -> list[RawArtifact]:
+def _dedupe(artifacts) -> list[RawArtifact]:
     chosen: dict[tuple, RawArtifact] = {}
     for artifact in artifacts:
         key = artifact.dedupe_key()

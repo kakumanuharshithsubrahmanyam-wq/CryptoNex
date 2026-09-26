@@ -12,6 +12,7 @@ from app.schemas.intelligence import (
     ArchitectRequest,
     AskRequest,
     MigrationPlanRequest,
+    PatchRequest,
     PolicyCheckRequest,
     RootCauseRequest,
     WhatIfRequest,
@@ -25,6 +26,7 @@ from app.services.cbom.queries import export_cbom_bytes, get_cbom, graph, invent
 from app.services.dependencies.queries import list_dependencies
 from app.services.intelligence.snapshot import load_snapshot
 from app.services.migration.queries import custom_migration_plan, finding_blast_radius, migration_for_finding, migrations
+from app.services.patches.service import create_finding_patch, read_finding_patch
 from app.services.policy.engine import evaluate_scan
 from app.services.pqc.agility import analyze_agility
 from app.services.pqc.registry import list_pqc, pqc_as_dict
@@ -120,6 +122,29 @@ def create_migration_plan(
     scan_id: int, body: MigrationPlanRequest, session: Session = Depends(get_db)
 ) -> dict:
     return custom_migration_plan(session, get_scan(session, scan_id), body.finding_id, body.replacement)
+
+
+@router.post("/{scan_id}/migrations/{finding_id}/patch")
+def create_migration_patch(
+    scan_id: int,
+    finding_id: int,
+    request: Request,
+    body: PatchRequest = Body(default_factory=PatchRequest),
+    session: Session = Depends(get_db),
+) -> dict:
+    return create_finding_patch(
+        session,
+        get_scan(session, scan_id),
+        finding_id,
+        request.app.state.settings,
+        body.replacement,
+        body.mode,
+    )
+
+
+@router.get("/{scan_id}/migrations/{finding_id}/patch")
+def read_migration_patch(scan_id: int, finding_id: int, session: Session = Depends(get_db)) -> dict:
+    return read_finding_patch(session, get_scan(session, scan_id), finding_id)
 
 
 @router.get("/{scan_id}/blast-radius/{finding_id}")

@@ -11,6 +11,7 @@ class Ecosystem(str, Enum):
     JAVASCRIPT = "javascript"
     GO = "go"
     RUST = "rust"
+    CPP = "cpp"
 
 
 class DependencyType(str, Enum):
@@ -51,7 +52,7 @@ _PYTHON_SEPARATORS = re.compile(r"[-_.]+")
 def normalize_name(ecosystem: str, name: str) -> str:
     if ecosystem == Ecosystem.PYTHON.value:
         return _PYTHON_SEPARATORS.sub("-", name).lower()
-    if ecosystem in {Ecosystem.JAVASCRIPT.value, Ecosystem.RUST.value}:
+    if ecosystem in {Ecosystem.JAVASCRIPT.value, Ecosystem.RUST.value, Ecosystem.CPP.value}:
         return name.lower()
     return name
 

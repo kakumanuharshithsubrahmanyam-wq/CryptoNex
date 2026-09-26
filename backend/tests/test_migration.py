@@ -42,6 +42,20 @@ def test_ecdsa_ed25519_and_dsa_map_to_signatures() -> None:
         assert _names(advice) == ["ML-DSA", "SLH-DSA"]
 
 
+def test_x25519_maps_to_ml_kem() -> None:
+    advice = advise(
+        finding(
+            algorithm="X25519",
+            cryptographic_role="unknown",
+            usage="key_agreement",
+            security_concern="classical_key_exchange",
+            key_size=None,
+        )
+    )
+    assert advice.role == "key_establishment"
+    assert _names(advice) == ["ML-KEM"]
+
+
 def test_ecdh_and_dh_map_to_ml_kem() -> None:
     for algorithm in ("ECDH", "Diffie-Hellman"):
         advice = advise(

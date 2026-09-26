@@ -153,6 +153,9 @@ def test_pem_certificate_metadata(tmp_path: Path) -> None:
     assert "test.cryptonex.local" in cert.metadata.get("san", "")
     assert "BEGIN CERTIFICATE" in cert.evidence
     assert cert.confidence == "high"
+    assert cert.metadata["artifact_kind"] == "certificate_material"
+    assert cert.metadata["repository_context"] == "unknown"
+    assert cert.metadata["content_fingerprint"]
 
 
 def test_ec_certificate_curve(tmp_path: Path) -> None:
@@ -202,6 +205,11 @@ def test_tls_versions_cipher_suites_and_mtls(tmp_path: Path) -> None:
     tls13 = _one(run, cipher_suite="TLS_AES_128_GCM_SHA256")
     assert tls13.algorithm == "AES"
     assert any(item.metadata.get("mtls") == "true" for item in run.artifacts)
+    suite = _one(run, cipher_suite="TLS_AES_128_GCM_SHA256")
+    assert suite.metadata["artifact_kind"] == "cipher_suite"
+    assert suite.metadata["repository_context"] == "configuration"
+    protocol = next(item for item in run.artifacts if item.artifact_type == "protocol" and item.protocol == "TLS")
+    assert protocol.metadata["artifact_kind"] == "protocol_metadata"
 
 
 def test_java_keystore_configuration(tmp_path: Path) -> None:
@@ -240,6 +248,48 @@ def test_malformed_certificate_is_recorded_without_guessing(tmp_path: Path) -> N
     assert cert.algorithm is None
     assert cert.key_size is None
     assert cert.metadata.get("malformed") == "true"
+
+
+def test_artifact_repository_context_and_stable_identity(tmp_path: Path) -> None:
+    run = _scan(
+        tmp_path,
+        {
+            "src/tests/data/x509/example.crt": RSA_CERT,
+            "src/examples/tls.cpp": "const auto suite = TLS_AES_128_GCM_SHA256;\n",
+            "certs/copy.crt": RSA_CERT,
+        },
+    )
+    fixture = _one(run, file_path="src/tests/data/x509/example.crt")
+    other = _one(run, file_path="certs/copy.crt")
+    assert fixture.metadata["repository_context"] == "test_fixture"
+    assert other.metadata["repository_context"] == "unknown"
+    assert fixture.metadata["content_fingerprint"] == other.metadata["content_fingerprint"]
+    example = _one(run, file_path="src/examples/tls.cpp", artifact_type="cipher_suite")
+    assert example.metadata["repository_context"] == "example"
+    assert example.metadata["artifact_kind"] == "cipher_suite"
+
+
+def test_certificate_occurrences_keep_location_and_share_fingerprint(tmp_path: Path) -> None:
+    run = _scan(
+        tmp_path,
+        {
+            "certs/server.crt": RSA_CERT,
+            "src/tests/data/x509/server.crt": RSA_CERT,
+            "src/tests/generated/corpus/copy.crt": RSA_CERT,
+            "src/embed.cpp": f"const char *pem = R\"(\n{RSA_CERT})\" ;\n",
+            "config/tls.yml": "certificate: /opt/app/server.crt\n",
+        },
+    )
+    certificates = [item for item in run.artifacts if item.artifact_type == "certificate"]
+    assert len(certificates) >= 4
+    fingerprints = {item.metadata["content_fingerprint"] for item in certificates}
+    assert len(fingerprints) == 1
+    by_path = {item.file_path: item for item in certificates}
+    assert by_path["certs/server.crt"].metadata["repository_context"] == "unknown"
+    assert by_path["src/tests/data/x509/server.crt"].metadata["repository_context"] == "test_fixture"
+    assert by_path["src/tests/generated/corpus/copy.crt"].metadata["repository_context"] == "generated_test_data"
+    assert by_path["src/embed.cpp"].metadata["repository_context"] == "source"
+    assert all(item.file_path and item.line_start for item in certificates)
 
 
 def test_repeated_artifact_scan_is_identical(tmp_path: Path) -> None:

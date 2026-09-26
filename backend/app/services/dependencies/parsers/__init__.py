@@ -4,6 +4,12 @@ from collections.abc import Callable
 
 from app.core.config import Settings
 from app.services.dependencies.parsers.common import dedupe_in_file
+from app.services.dependencies.parsers.cpp import (
+    parse_cmake_lists,
+    parse_conanfile_py,
+    parse_conanfile_txt,
+    parse_vcpkg_json,
+)
 from app.services.dependencies.parsers.go import parse_go_mod, parse_go_sum
 from app.services.dependencies.parsers.java import parse_gradle, parse_pom
 from app.services.dependencies.parsers.javascript import (
@@ -38,6 +44,10 @@ _PARSERS: dict[str, Parser] = {
     "go.sum": parse_go_sum,
     "cargo.toml": parse_cargo_toml,
     "cargo.lock": parse_cargo_lock,
+    "cmakelists.txt": parse_cmake_lists,
+    "vcpkg.json": parse_vcpkg_json,
+    "conanfile.txt": parse_conanfile_txt,
+    "conanfile.py": parse_conanfile_py,
 }
 
 

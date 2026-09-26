@@ -3,6 +3,7 @@
 from app.models.artifact import SecurityArtifact
 from app.models.cbom import Cbom, CbomComponent, CbomRelationship
 from app.models.dependency import Dependency, DependencyRelationship
+from app.models.patch import MigrationPatchProposal
 from app.models.project import Project
 from app.models.scan import CryptoFinding, Scan
 
@@ -13,6 +14,7 @@ __all__ = [
     "CryptoFinding",
     "Dependency",
     "DependencyRelationship",
+    "MigrationPatchProposal",
     "Project",
     "Scan",
     "SecurityArtifact",

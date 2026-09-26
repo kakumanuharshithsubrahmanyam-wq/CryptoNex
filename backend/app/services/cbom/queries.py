@@ -31,6 +31,13 @@ def export_cbom_bytes(session: Session, scan: Scan) -> bytes:
 
 
 def inventory(session: Session, scan: Scan) -> InventoryResponse:
+    """List algorithms actually used in stored CryptoFinding rows.
+
+    Inventory algorithms come only from findings whose algorithm is set and
+    whose usage is not dependency_only. Certificate, key, protocol, and
+    cipher-suite artifact algorithms are excluded here; they remain on the
+    graph and artifact list with evidence_origins other than crypto_finding.
+    """
     findings = session.scalars(select(CryptoFinding).where(CryptoFinding.scan_id == scan.id)).all()
     dependencies = session.scalars(select(Dependency).where(Dependency.scan_id == scan.id)).all()
     artifacts = session.scalars(select(SecurityArtifact).where(SecurityArtifact.scan_id == scan.id)).all()

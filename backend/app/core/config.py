@@ -34,6 +34,7 @@ class Settings(BaseSettings):
         "node_modules,vendor,dist,build,.git,__pycache__,.venv,venv,target"
     )
     evidence_max_chars: int = 240
+    max_patch_bytes: int = 16384
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str = "https://api.openai.com/v1"
@@ -78,6 +79,7 @@ class Settings(BaseSettings):
         "clone_timeout_seconds",
         "max_zip_size_mb",
         "max_zip_extracted_size_mb",
+        "max_patch_bytes",
     )
     @classmethod
     def limits_must_be_positive(cls, value: int) -> int:

@@ -27,11 +27,15 @@ def build_graph(
     edges: list[dict] = []
 
     def node(node_id: str, node_type: str, label: str, metadata: dict | None = None) -> None:
+        incoming = {key: value for key, value in (metadata or {}).items() if value is not None}
+        if node_id in nodes and node_type == "algorithm":
+            nodes[node_id]["metadata"] = _merge_algorithm_metadata(nodes[node_id]["metadata"], incoming)
+            return
         nodes[node_id] = {
             "id": node_id,
             "type": node_type,
             "label": label,
-            "metadata": {key: value for key, value in (metadata or {}).items() if value is not None},
+            "metadata": incoming,
         }
 
     def edge(source: str, target: str, edge_type: str) -> None:
@@ -63,7 +67,16 @@ def build_graph(
         edge(finding_id, file_id, "LOCATED_IN")
         if finding.algorithm:
             algorithm_id = f"algorithm:{finding.algorithm}"
-            node(algorithm_id, "algorithm", finding.algorithm, {"family": finding.algorithm_family})
+            node(
+                algorithm_id,
+                "algorithm",
+                finding.algorithm,
+                {
+                    "family": finding.algorithm_family,
+                    "evidence_origins": "crypto_finding",
+                    "confirmed_usage": "true",
+                },
+            )
             edge(finding_id, algorithm_id, "USES_ALGORITHM")
         if finding.library:
             library_id = f"library:{finding.library}"
@@ -104,7 +117,12 @@ def build_graph(
             edge(artifact_id, file_id, "LOCATED_IN")
             if artifact.algorithm:
                 algorithm_id = f"algorithm:{artifact.algorithm}"
-                node(algorithm_id, "algorithm", artifact.algorithm)
+                node(
+                    algorithm_id,
+                    "algorithm",
+                    artifact.algorithm,
+                    {"evidence_origins": "certificate", "confirmed_usage": "false"},
+                )
                 edge(artifact_id, algorithm_id, "USES_ALGORITHM")
         elif artifact.artifact_type in {"private_key", "public_key", "ssh_key"}:
             artifact_id = f"key:{artifact.id}"
@@ -112,7 +130,12 @@ def build_graph(
             edge(artifact_id, file_id, "LOCATED_IN")
             if artifact.algorithm:
                 algorithm_id = f"algorithm:{artifact.algorithm}"
-                node(algorithm_id, "algorithm", artifact.algorithm)
+                node(
+                    algorithm_id,
+                    "algorithm",
+                    artifact.algorithm,
+                    {"evidence_origins": "key", "confirmed_usage": "false"},
+                )
                 edge(artifact_id, algorithm_id, "USES_ALGORITHM")
         elif artifact.artifact_type == "cipher_suite" and artifact.cipher_suite:
             suite_id = f"cipher_suite:{artifact.cipher_suite}"
@@ -120,7 +143,12 @@ def build_graph(
             edge(suite_id, file_id, "LOCATED_IN")
             if artifact.algorithm:
                 algorithm_id = f"algorithm:{artifact.algorithm}"
-                node(algorithm_id, "algorithm", artifact.algorithm)
+                node(
+                    algorithm_id,
+                    "algorithm",
+                    artifact.algorithm,
+                    {"evidence_origins": "cipher_suite", "confirmed_usage": "false"},
+                )
                 edge(suite_id, algorithm_id, "USES_ALGORITHM")
         elif artifact.artifact_type in {"protocol", "ssh_config"}:
             artifact_id = f"protocol:{artifact.id}"
@@ -132,7 +160,12 @@ def build_graph(
             edge(artifact_id, file_id, "LOCATED_IN")
             if artifact.algorithm:
                 algorithm_id = f"algorithm:{artifact.algorithm}"
-                node(algorithm_id, "algorithm", artifact.algorithm)
+                node(
+                    algorithm_id,
+                    "algorithm",
+                    artifact.algorithm,
+                    {"evidence_origins": "protocol", "confirmed_usage": "false"},
+                )
                 edge(artifact_id, algorithm_id, "USES_ALGORITHM")
 
     for artifact in artifacts:
@@ -207,6 +240,18 @@ def filter_graph(graph: dict, node_type: str | None, algorithm: str | None, file
             "node_types": _counts(nodes, "type"),
         },
     }
+
+
+def _merge_algorithm_metadata(existing: dict, incoming: dict) -> dict:
+    origins: set[str] = set()
+    for blob in (existing.get("evidence_origins"), incoming.get("evidence_origins")):
+        if blob:
+            origins.update(part for part in str(blob).split(",") if part)
+    merged = {**existing, **incoming}
+    if origins:
+        merged["evidence_origins"] = ",".join(sorted(origins))
+        merged["confirmed_usage"] = "true" if "crypto_finding" in origins else "false"
+    return merged
 
 
 def _json(value: str | None) -> dict:

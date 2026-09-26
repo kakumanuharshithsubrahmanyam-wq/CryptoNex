@@ -30,6 +30,14 @@ def build_cbom_document(
 
     add(_component(f"scan:{scan.id}", "scan", f"scan-{scan.id}", {"project_id": scan.project_id, "scan_id": scan.id}))
 
+    algorithm_origins: dict[str, set[str]] = {}
+    for finding in findings:
+        if finding.algorithm:
+            algorithm_origins.setdefault(finding.algorithm, set()).add("crypto_finding")
+    for artifact in artifacts:
+        if artifact.algorithm:
+            algorithm_origins.setdefault(artifact.algorithm, set()).add(_artifact_origin(artifact.artifact_type))
+
     for finding in findings:
         add(_file_component(finding.file_path))
         usage_key = f"crypto_usage:{finding.id}"
@@ -57,7 +65,7 @@ def build_cbom_document(
         relationships.append(_rel(usage_key, f"file:{finding.file_path}", "located_in"))
         if finding.algorithm:
             alg_key = f"algorithm:{finding.algorithm}"
-            add(_algorithm_component(finding.algorithm, finding.algorithm_family))
+            add(_algorithm_component(finding.algorithm, finding.algorithm_family, algorithm_origins.get(finding.algorithm)))
             relationships.append(_rel(usage_key, alg_key, "uses"))
         if finding.library:
             lib_key = f"library:{finding.library}"
@@ -97,7 +105,7 @@ def build_cbom_document(
         relationships.append(_rel(key, f"file:{artifact.file_path}", "located_in"))
         if artifact.algorithm:
             alg_key = f"algorithm:{artifact.algorithm}"
-            add(_algorithm_component(artifact.algorithm, None))
+            add(_algorithm_component(artifact.algorithm, None, algorithm_origins.get(artifact.algorithm)))
             relationships.append(_rel(key, alg_key, "uses"))
         if artifact.cipher_suite:
             suite_key = f"cipher_suite:{artifact.cipher_suite}"
@@ -187,8 +195,31 @@ def _component(key: str, component_type: str, name: str, fields: dict) -> dict:
     return payload
 
 
-def _algorithm_component(name: str, family: str | None) -> dict:
-    return _component(f"algorithm:{name}", "algorithm", name, {"algorithm": name, "algorithm_family": family})
+def _algorithm_component(name: str, family: str | None, origins: set[str] | None = None) -> dict:
+    origin_list = ",".join(sorted(origins or ()))
+    return _component(
+        f"algorithm:{name}",
+        "algorithm",
+        name,
+        {
+            "algorithm": name,
+            "algorithm_family": family,
+            "evidence_origins": origin_list or None,
+            "confirmed_usage": "true" if origins and "crypto_finding" in origins else "false",
+        },
+    )
+
+
+def _artifact_origin(artifact_type: str) -> str:
+    if artifact_type == "certificate":
+        return "certificate"
+    if artifact_type in {"private_key", "public_key", "ssh_key"}:
+        return "key"
+    if artifact_type == "cipher_suite":
+        return "cipher_suite"
+    if artifact_type in {"protocol", "ssh_config"}:
+        return "protocol"
+    return "artifact"
 
 
 def _file_component(path: str) -> dict:

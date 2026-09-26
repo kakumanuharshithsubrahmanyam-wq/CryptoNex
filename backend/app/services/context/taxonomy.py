@@ -76,6 +76,8 @@ class SecurityConcern(str, Enum):
     MODERN_HASH = "modern_hash"
     KEY_DERIVATION = "key_derivation"
     MAC = "mac"
+    POST_QUANTUM = "post_quantum"
+    HYBRID = "hybrid"
     UNKNOWN = "unknown"
 
 
@@ -87,4 +89,6 @@ class QuantumRelevance(str, Enum):
     HASH = "hash"
     MAC = "mac"
     KEY_DERIVATION = "key_derivation"
+    POST_QUANTUM = "post_quantum"
+    HYBRID = "hybrid"
     UNKNOWN = "unknown"

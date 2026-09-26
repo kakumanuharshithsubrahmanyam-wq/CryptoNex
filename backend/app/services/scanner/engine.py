@@ -19,6 +19,7 @@ from app.services.scanner.detectors.go_detector import detect_go
 from app.services.scanner.detectors.java_detector import detect_java
 from app.services.scanner.detectors.javascript_detector import detect_javascript
 from app.services.scanner.detectors.python_detector import detect_python
+from app.services.scanner.detectors.rust_detector import detect_rust
 from app.services.scanner.findings import RawFinding, prefer
 
 _SOURCE_LANGUAGES = {
@@ -29,6 +30,7 @@ _SOURCE_LANGUAGES = {
     ".ts": "TypeScript",
     ".tsx": "TypeScript",
     ".go": "Go",
+    ".rs": "Rust",
     ".c": "C",
     ".cc": "C++",
     ".cpp": "C++",
@@ -53,6 +55,10 @@ _DEPENDENCY_NAMES = {
     "go.sum",
     "cargo.toml",
     "cargo.lock",
+    "cmakelists.txt",
+    "vcpkg.json",
+    "conanfile.txt",
+    "conanfile.py",
 }
 
 
@@ -191,6 +197,8 @@ def _detect_source(source: str, file_path: str, language: str, settings: Setting
         return detect_javascript(source, file_path, settings, language)
     if language == "Go":
         return detect_go(source, file_path, settings)
+    if language == "Rust":
+        return detect_rust(source, file_path, settings)
     if language in {"C", "C++"}:
         return detect_cpp(source, file_path, settings, language)
     return []

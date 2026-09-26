@@ -8,6 +8,11 @@ class MigrationPlanRequest(BaseModel):
     replacement: str | None = None
 
 
+class PatchRequest(BaseModel):
+    replacement: str | None = Field(default=None, max_length=64)
+    mode: str = Field(default="minimal", min_length=1, max_length=32)
+
+
 class WhatIfRequest(BaseModel):
     finding_id: int
     replacement: str = Field(..., min_length=1, max_length=64)

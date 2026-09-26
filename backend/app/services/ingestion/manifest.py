@@ -37,6 +37,10 @@ _DEPENDENCY_NAMES = {
     "gemfile.lock",
     "composer.json",
     "composer.lock",
+    "cmakelists.txt",
+    "vcpkg.json",
+    "conanfile.txt",
+    "conanfile.py",
 }
 
 _SOURCE_LANGUAGES = {
