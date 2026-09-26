@@ -24,6 +24,7 @@ def settings(tmp_path) -> Settings:
         cors_origins="http://localhost:5173",
         environment="test",
         log_level="WARNING",
+        workspace_root=str(tmp_path / "workspaces"),
     )
 
 

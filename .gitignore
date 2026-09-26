@@ -14,10 +14,11 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Local databases
+# Local databases and ingested repository workspaces
 *.db
 *.sqlite
 *.sqlite3
+workspaces/
 
 # Node / frontend build
 node_modules/

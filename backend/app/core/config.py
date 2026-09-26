@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     environment: str = "development"
     log_level: str = "INFO"
+    workspace_root: str = "./workspaces"
+    git_executable: str = "git"
+    max_repository_size_mb: int = 100
+    max_file_count: int = 10000
+    max_file_size_mb: int = 10
+    clone_timeout_seconds: int = 120
+    max_zip_size_mb: int = 50
+    max_zip_extracted_size_mb: int = 200
 
     @field_validator("database_url")
     @classmethod
@@ -38,6 +46,36 @@ class Settings(BaseSettings):
         if not normalized:
             raise ValueError("ENVIRONMENT must not be empty")
         return normalized
+
+    @field_validator("workspace_root")
+    @classmethod
+    def workspace_root_must_be_present(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("WORKSPACE_ROOT must not be empty")
+        return stripped
+
+    @field_validator("git_executable")
+    @classmethod
+    def git_executable_must_be_a_single_token(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped or any(character in stripped for character in " \t\n;&|$`<>"):
+            raise ValueError("GIT_EXECUTABLE must be a single executable name or path")
+        return stripped
+
+    @field_validator(
+        "max_repository_size_mb",
+        "max_file_count",
+        "max_file_size_mb",
+        "clone_timeout_seconds",
+        "max_zip_size_mb",
+        "max_zip_extracted_size_mb",
+    )
+    @classmethod
+    def limits_must_be_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("Ingestion limits must be at least 1")
+        return value
 
     @field_validator("log_level")
     @classmethod

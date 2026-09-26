@@ -14,7 +14,17 @@ def test_database_initialization_creates_project_table(client: TestClient) -> No
     assert "projects" in table_names
 
     columns = {column["name"] for column in inspect(engine).get_columns("projects")}
-    assert columns == {"id", "name", "created_at", "updated_at"}
+    assert columns == {
+        "id",
+        "name",
+        "repository_url",
+        "source_type",
+        "status",
+        "workspace_path",
+        "manifest_json",
+        "created_at",
+        "updated_at",
+    }
 
     session = client.app.state.session_factory()
     try:

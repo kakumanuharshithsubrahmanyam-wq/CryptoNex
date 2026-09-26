@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 
 from fastapi import Request
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -37,11 +37,39 @@ def create_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
+_PROJECT_COLUMN_UPGRADES = (
+    ("repository_url", "ALTER TABLE projects ADD COLUMN repository_url VARCHAR(512)"),
+    (
+        "source_type",
+        "ALTER TABLE projects ADD COLUMN source_type VARCHAR(16) NOT NULL DEFAULT 'github'",
+    ),
+    (
+        "status",
+        "ALTER TABLE projects ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'created'",
+    ),
+    ("workspace_path", "ALTER TABLE projects ADD COLUMN workspace_path VARCHAR(1024)"),
+    ("manifest_json", "ALTER TABLE projects ADD COLUMN manifest_json TEXT"),
+)
+
+
+def _upgrade_project_columns(engine: Engine) -> None:
+    """Add Phase 1 columns to a database created before those fields existed."""
+    inspector = inspect(engine)
+    if "projects" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("projects")}
+    with engine.begin() as connection:
+        for name, statement in _PROJECT_COLUMN_UPGRADES:
+            if name not in existing:
+                connection.execute(text(statement))
+
+
 def init_db(engine: Engine) -> None:
     """Create tables for models imported by app.models."""
     import app.models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _upgrade_project_columns(engine)
 
 
 def get_db(request: Request) -> Iterator[Session]:

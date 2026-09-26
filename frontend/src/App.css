@@ -24,6 +24,48 @@ h1 {
   color: #3f3a34;
 }
 
+.scan {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.scan label {
+  font-size: 0.92rem;
+}
+
+.scan input[type="url"] {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d8d0c4;
+  background: #fffdf8;
+  color: #1c1915;
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+}
+
+.or {
+  margin: 0.2rem 0;
+  color: #6d655c;
+}
+
+.upload {
+  display: inline-block;
+  border: 1px solid #1c1915;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.upload input {
+  display: none;
+}
+
+.connection {
+  margin-top: 1rem;
+}
+
 .status {
   border: 1px solid #d8d0c4;
   background: #fffdf8;
