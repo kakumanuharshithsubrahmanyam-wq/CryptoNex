@@ -53,6 +53,13 @@ def save_proposal(session: Session, proposal: PatchProposal) -> PatchProposal:
     return row_to_proposal(row)
 
 
+def proposal_row(session: Session, scan_id: int, finding_id: int, patch_id: int) -> MigrationPatchProposal:
+    row = session.get(MigrationPatchProposal, patch_id)
+    if row is None or row.scan_id != scan_id or row.finding_id != finding_id:
+        raise AppError("PATCH_NOT_FOUND", "No patch proposal has been generated for this finding.", status_code=404)
+    return row
+
+
 def latest_proposal(session: Session, scan_id: int, finding_id: int) -> PatchProposal:
     row = session.scalar(
         select(MigrationPatchProposal).where(

@@ -14,6 +14,7 @@ from app.schemas.intelligence import (
     MigrationPlanRequest,
     PatchRequest,
     PolicyCheckRequest,
+    VerifyRequest,
     RootCauseRequest,
     WhatIfRequest,
 )
@@ -27,6 +28,7 @@ from app.services.dependencies.queries import list_dependencies
 from app.services.intelligence.snapshot import load_snapshot
 from app.services.migration.queries import custom_migration_plan, finding_blast_radius, migration_for_finding, migrations
 from app.services.patches.service import create_finding_patch, read_finding_patch
+from app.services.verification.service import latest_verification, verify_finding_patch
 from app.services.policy.engine import evaluate_scan
 from app.services.pqc.agility import analyze_agility
 from app.services.pqc.registry import list_pqc, pqc_as_dict
@@ -145,6 +147,28 @@ def create_migration_patch(
 @router.get("/{scan_id}/migrations/{finding_id}/patch")
 def read_migration_patch(scan_id: int, finding_id: int, session: Session = Depends(get_db)) -> dict:
     return read_finding_patch(session, get_scan(session, scan_id), finding_id)
+
+
+@router.post("/{scan_id}/migrations/{finding_id}/patch/verify")
+def create_patch_verification(
+    scan_id: int,
+    finding_id: int,
+    request: Request,
+    body: VerifyRequest,
+    session: Session = Depends(get_db),
+) -> dict:
+    return verify_finding_patch(
+        session,
+        get_scan(session, scan_id),
+        finding_id,
+        body.patch_id,
+        request.app.state.settings,
+    )
+
+
+@router.get("/{scan_id}/migrations/{finding_id}/patch/verify")
+def read_patch_verification(scan_id: int, finding_id: int, session: Session = Depends(get_db)) -> dict:
+    return latest_verification(session, get_scan(session, scan_id), finding_id)
 
 
 @router.get("/{scan_id}/blast-radius/{finding_id}")

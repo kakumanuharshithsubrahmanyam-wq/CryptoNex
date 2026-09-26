@@ -57,41 +57,7 @@ def scan_project(session: Session, project: Project, settings: Settings) -> Scan
                 details={"limit": settings.max_file_count},
             )
         result = scan_manifest(source_root, manifest, settings)
-        contexts = [classify(finding) for finding in result.findings]
-        for finding, context in zip(result.findings, contexts):
-            finding.confidence = context.confidence.value
-        links = link_all(result.findings, result.dependencies)
-        apply_declared_versions(result.findings, result.dependencies, links)
-
-        dependency_rows = [dependency_row(project.id, scan.id, item) for item in result.dependencies]
-        finding_rows = [
-            _row(project.id, scan.id, finding, context)
-            for finding, context in zip(result.findings, contexts)
-        ]
-        artifact_rows = [artifact_row(project.id, scan.id, item) for item in result.artifacts]
-        session.add_all(dependency_rows)
-        session.add_all(finding_rows)
-        session.add_all(artifact_rows)
-        session.flush()
-        relationship_models = relationship_rows(
-            scan.id,
-            links,
-            [row.id for row in finding_rows],
-            [row.id for row in dependency_rows],
-        )
-        session.add_all(relationship_models)
-        session.flush()
-        document = build_cbom_document(scan, finding_rows, dependency_rows, artifact_rows, relationship_models)
-        cbom, cbom_components, cbom_relationships = persist_cbom(scan, document)
-        session.add(cbom)
-        session.flush()
-        attach_cbom_children(cbom, cbom_components, cbom_relationships)
-        session.add_all(cbom_components)
-        session.add_all(cbom_relationships)
-        summary = _summary(result, contexts)
-        scan.status = ScanStatus.COMPLETED.value
-        scan.summary_json = summary.model_dump_json()
-        session.commit()
+        summary = _persist_run(session, project, scan, result)
         logger.info("Scan completed project_id=%s scan_id=%s", project.id, scan.id)
         return ScanResponse(
             scan_id=scan.id,
@@ -107,6 +73,68 @@ def scan_project(session: Session, project: Project, settings: Settings) -> Scan
         _fail(session, scan.id)
         logger.error("Scan failed project_id=%s error_type=%s", project.id, type(exc).__name__)
         raise AppError("SCAN_FAILED", "The cryptographic scan failed.", status_code=500) from exc
+
+
+def scan_isolated_tree(session: Session, project: Project, source_root: Path, settings: Settings) -> Scan:
+    """Scan a copied tree and store a verification scan. The project snapshot is not used."""
+    from app.services.ingestion.manifest import build_manifest
+
+    if not source_root.is_dir() or not _workspace_is_contained(settings, source_root):
+        raise AppError("SCAN_FAILED", "The verification snapshot is not available.", status_code=500)
+    manifest = build_manifest(source_root, settings)
+    scan = Scan(project_id=project.id, status=ScanStatus.RUNNING.value, kind="verification")
+    session.add(scan)
+    session.commit()
+    session.refresh(scan)
+    try:
+        result = scan_manifest(source_root, manifest, settings)
+        _persist_run(session, project, scan, result)
+        return scan
+    except AppError as exc:
+        _fail(session, scan.id)
+        raise exc
+    except Exception as exc:
+        session.rollback()
+        _fail(session, scan.id)
+        logger.error("Verification scan failed project_id=%s error_type=%s", project.id, type(exc).__name__)
+        raise AppError("SCAN_FAILED", "The cryptographic scan failed.", status_code=500) from exc
+
+
+def _persist_run(session: Session, project: Project, scan: Scan, result: ScanRun) -> ScanSummary:
+    contexts = [classify(finding) for finding in result.findings]
+    for finding, context in zip(result.findings, contexts):
+        finding.confidence = context.confidence.value
+    links = link_all(result.findings, result.dependencies)
+    apply_declared_versions(result.findings, result.dependencies, links)
+    dependency_rows = [dependency_row(project.id, scan.id, item) for item in result.dependencies]
+    finding_rows = [
+        _row(project.id, scan.id, finding, context) for finding, context in zip(result.findings, contexts)
+    ]
+    artifact_rows = [artifact_row(project.id, scan.id, item) for item in result.artifacts]
+    session.add_all(dependency_rows)
+    session.add_all(finding_rows)
+    session.add_all(artifact_rows)
+    session.flush()
+    relationship_models = relationship_rows(
+        scan.id,
+        links,
+        [row.id for row in finding_rows],
+        [row.id for row in dependency_rows],
+    )
+    session.add_all(relationship_models)
+    session.flush()
+    document = build_cbom_document(scan, finding_rows, dependency_rows, artifact_rows, relationship_models)
+    cbom, cbom_components, cbom_relationships = persist_cbom(scan, document)
+    session.add(cbom)
+    session.flush()
+    attach_cbom_children(cbom, cbom_components, cbom_relationships)
+    session.add_all(cbom_components)
+    session.add_all(cbom_relationships)
+    summary = _summary(result, contexts)
+    scan.status = ScanStatus.COMPLETED.value
+    scan.summary_json = summary.model_dump_json()
+    session.commit()
+    return summary
 
 
 def _workspace_is_contained(settings: Settings, workspace: Path) -> bool:

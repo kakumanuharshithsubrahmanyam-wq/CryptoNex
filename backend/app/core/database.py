@@ -64,9 +64,14 @@ _FINDING_COLUMN_UPGRADES = tuple(
     )
 )
 
+_SCAN_COLUMN_UPGRADES = (
+    ("kind", "ALTER TABLE scans ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'inventory'"),
+)
+
 _COLUMN_UPGRADES = {
     "projects": _PROJECT_COLUMN_UPGRADES,
     "crypto_findings": _FINDING_COLUMN_UPGRADES,
+    "scans": _SCAN_COLUMN_UPGRADES,
 }
 
 

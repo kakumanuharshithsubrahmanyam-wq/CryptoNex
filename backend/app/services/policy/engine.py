@@ -31,7 +31,11 @@ def evaluate_project(session: Session, project: Project, policy_yaml: str | None
 
     scan = session.scalar(
         select(Scan)
-        .where(Scan.project_id == project.id, Scan.status == ScanStatus.COMPLETED.value)
+        .where(
+            Scan.project_id == project.id,
+            Scan.status == ScanStatus.COMPLETED.value,
+            Scan.kind == "inventory",
+        )
         .order_by(Scan.id.desc())
     )
     if scan is None:

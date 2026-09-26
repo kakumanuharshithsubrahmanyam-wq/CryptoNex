@@ -27,7 +27,7 @@ migration.
 | `unsupported` | No deterministic transformation is registered (modern primitives, dependency-only evidence, unknown APIs). |
 | `validation_failed` | A rewrite was attempted and rejected (missing source, mismatch, traversal, size, secrets). |
 
-`applied` is not a valid status. This feature does not apply patches.
+`applied` is not a patch status. Generating a proposal does not modify the repository. Verification, below, applies a stored proposal only in an isolated copy.
 
 ### Safety model
 
@@ -101,17 +101,73 @@ latest stored proposal (`PATCH_NOT_FOUND` if none).
 
 Existing migration, blast-radius, and what-if endpoints are unchanged.
 
+## Automatic remediation verification
+
+Explicit verification extends a stored patch proposal:
+
+Detect → plan → generate patch → review → verify in isolation → rescan →
+compare → detect regression
+
+```
+POST /api/v1/scans/{scan_id}/migrations/{finding_id}/patch/verify
+GET  /api/v1/scans/{scan_id}/migrations/{finding_id}/patch/verify
+```
+
+Request:
+
+```json
+{ "patch_id": 1 }
+```
+
+The endpoint accepts only `patch_status = generated`. It copies the ingested
+snapshot into a temporary workspace under the CryptoNex workspace root, applies
+the stored unified diff with an internal applier, and runs the existing
+scanner. The verification scan is stored separately (`kind = verification`)
+and is excluded from project drift and the latest policy scan. The original
+scan and source tree stay unchanged.
+
+### Verification states
+
+| Status | Meaning |
+| --- | --- |
+| `verified` | The targeted algorithm usage is gone, the registered replacement is present, and no regression was detected. |
+| `partially_verified` | The targeted algorithm is gone, but the observed replacement is not the registered one and the role remains. |
+| `manual_review_required` | The original usage and the replacement are both still present. |
+| `no_change` | The patch applied and the targeted finding is unchanged. |
+| `verification_failed` | The scanner cannot confirm the intended change. |
+| `patch_failed` | The stored diff was rejected or did not apply. |
+| `rescan_failed` | The isolated scanner run failed. |
+| `regression_detected` | Deterministic evidence shows a new finding, policy failure, dependency change, certificate/protocol change, CBOM change outside the intended edit, or an unrelated finding disappeared. |
+
+`target_status` is `resolved`, `still_present`, `partially_resolved`, or `unknown`.
+`verified` is not returned merely because the diff applied.
+
+Policy comparison reports whether failures decreased, stayed unchanged, or
+increased. There is no numeric security score. A CBOM change is described as
+`expected`, `unexpected`, or `unchanged`. A changed CBOM does not prove the
+repository is secure or quantum-safe.
+
+### Isolation safety
+
+Verification does not run repository code, install packages, compile, commit,
+push, or open a pull request. Paths must stay inside the copied snapshot.
+Absolute paths, `..`, missing files, oversized diffs, and secret-bearing diffs
+fail as `patch_failed`.
+
+Complex public-key migrations (RSA, ECDSA, Ed25519, ECDH, X25519, DH, DSA)
+remain `manual_migration_required` and are not rewritten into PQC one-liners.
+
 ## Planned automation (not implemented)
 
-These stages are designed to attach later without rewriting the proposal
-service. They are not available now:
+Isolated apply, rescan, and comparison are implemented above. These stages
+are not implemented:
 
-1. Apply an approved patch in an isolated workspace, rescan, and compare findings.
-2. CI/CD attachment of a proposal when policy fails.
-3. Optional pull-request creation only after explicit user opt-in.
-4. Crypto-debt batching of related findings.
-5. Dependency declaration patches when versions are explicit and registered.
-6. Drift remediation proposals from scan comparison.
+1. CI/CD attachment of a proposal when policy fails.
+2. Optional pull-request creation only after explicit user opt-in.
+3. Crypto-debt batching of related findings.
+4. Dependency declaration patches when versions are explicit and registered.
+5. Drift remediation proposals from scan comparison.
+6. Automatic merging, GitHub push, or runtime instrumentation.
 
 ## Language detection notes
 

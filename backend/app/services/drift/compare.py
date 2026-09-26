@@ -66,7 +66,11 @@ def _resolve_scans(
     completed = list(
         session.scalars(
             select(Scan)
-            .where(Scan.project_id == project.id, Scan.status == ScanStatus.COMPLETED.value)
+            .where(
+                Scan.project_id == project.id,
+                Scan.status == ScanStatus.COMPLETED.value,
+                Scan.kind == "inventory",
+            )
             .order_by(Scan.id)
         )
     )

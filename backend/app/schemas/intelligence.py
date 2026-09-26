@@ -13,6 +13,10 @@ class PatchRequest(BaseModel):
     mode: str = Field(default="minimal", min_length=1, max_length=32)
 
 
+class VerifyRequest(BaseModel):
+    patch_id: int = Field(..., ge=1)
+
+
 class WhatIfRequest(BaseModel):
     finding_id: int
     replacement: str = Field(..., min_length=1, max_length=64)
