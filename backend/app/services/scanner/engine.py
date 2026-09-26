@@ -8,8 +8,11 @@ from pathlib import Path
 
 from app.core.config import Settings
 from app.schemas.project import FileCategory, RepositoryManifest
+from app.services.dependencies.inventory import build_inventory
+from app.services.dependencies.parsers import parse_manifest
+from app.services.dependencies.types import DeclaredDependency
 from app.services.scanner.detectors.cpp_detector import detect_cpp
-from app.services.scanner.detectors.dependency_detector import detect_dependencies
+from app.services.scanner.detectors.dependency_detector import dependency_findings
 from app.services.scanner.detectors.go_detector import detect_go
 from app.services.scanner.detectors.java_detector import detect_java
 from app.services.scanner.detectors.javascript_detector import detect_javascript
@@ -54,6 +57,9 @@ _DEPENDENCY_NAMES = {
 class ScanRun:
     def __init__(self) -> None:
         self.findings: list[RawFinding] = []
+        self.dependencies: list[DeclaredDependency] = []
+        self.manifests: dict[str, dict[str, str]] = {}
+        self.malformed_manifests = 0
         self.files_scanned = 0
         self.skip_reasons: dict[str, int] = {}
 
@@ -103,9 +109,15 @@ def scan_manifest(source_root: Path, manifest: RepositoryManifest, settings: Set
             continue
         run.files_scanned += 1
         if is_dependency:
-            run.findings.extend(detect_dependencies(text, relative, settings))
+            parsed = parse_manifest(text, relative, settings)
+            run.manifests[relative] = parsed.attributes
+            run.dependencies.extend(parsed.dependencies)
+            if parsed.malformed:
+                run.malformed_manifests += 1
             continue
         run.findings.extend(_detect_source(text, relative, language or "", settings))
+    run.dependencies = build_inventory(run.dependencies, run.manifests)
+    run.findings.extend(dependency_findings(run.dependencies))
     run.findings = dedupe(run.findings)
     return run
 

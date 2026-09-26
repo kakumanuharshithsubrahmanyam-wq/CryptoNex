@@ -21,6 +21,9 @@ class RawFinding:
     detection_method: str
     confidence: str
     metadata: dict[str, str] = field(default_factory=dict)
+    # False when the library label was inferred from a call name rather than
+    # confirmed by an import or a library-specific API.
+    library_resolved: bool = True
 
     def dedupe_key(self) -> tuple[str, int, str, str, str, str]:
         return (

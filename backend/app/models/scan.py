@@ -54,3 +54,11 @@ class CryptoFinding(Base):
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    # Deterministic context. Null on findings stored before these fields existed.
+    evidence_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confidence_reasons_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    finding_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cryptographic_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    parameter_completeness: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    security_concern: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    quantum_relevance: Mapped[str | None] = mapped_column(String(40), nullable=True)

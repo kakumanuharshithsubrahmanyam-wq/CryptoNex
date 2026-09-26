@@ -389,6 +389,8 @@ def _finding(
         detection_method=method,
         confidence=confidence,
         metadata=metadata or {},
+        # Every Python rule lowers confidence only when the import was not resolved.
+        library_resolved=confidence == "high",
     )
 
 

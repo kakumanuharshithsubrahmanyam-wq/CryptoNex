@@ -13,8 +13,13 @@ from app.models.project import Project, ProjectStatus
 from app.models.scan import CryptoFinding, Scan, ScanStatus
 from app.schemas.project import RepositoryManifest
 from app.schemas.scan import ScanResponse, ScanSummary
+from app.services.context.classifier import FindingContext, classify
+from app.services.context.taxonomy import FindingStatus
+from app.services.dependencies.linking import apply_declared_versions, link_all
+from app.services.dependencies.persistence import dependency_row, relationship_rows
+from app.services.dependencies.types import CryptoRelevance
 from app.services.ingestion.workspace import source_directory
-from app.services.scanner.engine import scan_manifest
+from app.services.scanner.engine import ScanRun, scan_manifest
 from app.services.scanner.findings import RawFinding
 
 logger = logging.getLogger(__name__)
@@ -50,9 +55,29 @@ def scan_project(session: Session, project: Project, settings: Settings) -> Scan
                 details={"limit": settings.max_file_count},
             )
         result = scan_manifest(source_root, manifest, settings)
-        for finding in result.findings:
-            session.add(_row(project.id, scan.id, finding))
-        summary = _summary(result.files_scanned, result.skip_reasons, result.findings)
+        contexts = [classify(finding) for finding in result.findings]
+        for finding, context in zip(result.findings, contexts):
+            finding.confidence = context.confidence.value
+        links = link_all(result.findings, result.dependencies)
+        apply_declared_versions(result.findings, result.dependencies, links)
+
+        dependency_rows = [dependency_row(project.id, scan.id, item) for item in result.dependencies]
+        finding_rows = [
+            _row(project.id, scan.id, finding, context)
+            for finding, context in zip(result.findings, contexts)
+        ]
+        session.add_all(dependency_rows)
+        session.add_all(finding_rows)
+        session.flush()
+        session.add_all(
+            relationship_rows(
+                scan.id,
+                links,
+                [row.id for row in finding_rows],
+                [row.id for row in dependency_rows],
+            )
+        )
+        summary = _summary(result, contexts)
         scan.status = ScanStatus.COMPLETED.value
         scan.summary_json = summary.model_dump_json()
         session.commit()
@@ -81,7 +106,7 @@ def _workspace_is_contained(settings: Settings, workspace: Path) -> bool:
     return resolved.is_relative_to(root)
 
 
-def _row(project_id: int, scan_id: int, finding: RawFinding) -> CryptoFinding:
+def _row(project_id: int, scan_id: int, finding: RawFinding, context: FindingContext) -> CryptoFinding:
     payload = {
         "file_path": finding.file_path,
         "line_start": finding.line_start,
@@ -111,25 +136,44 @@ def _row(project_id: int, scan_id: int, finding: RawFinding) -> CryptoFinding:
         confidence=finding.confidence,
         metadata_json=json.dumps(finding.metadata, sort_keys=True),
         fingerprint=fingerprint,
+        evidence_type=context.evidence_type.value,
+        confidence_reasons_json=json.dumps([reason.value for reason in context.confidence_reasons]),
+        finding_status=context.finding_status.value,
+        cryptographic_role=context.cryptographic_role.value,
+        parameter_completeness=context.parameter_completeness.value,
+        security_concern=context.security_concern.value,
+        quantum_relevance=context.quantum_relevance.value,
     )
 
 
-def _summary(files_scanned: int, skip_reasons: dict[str, int], findings: list[RawFinding]) -> ScanSummary:
+def _summary(result: ScanRun, contexts: list[FindingContext]) -> ScanSummary:
+    findings = result.findings
     algorithms: dict[str, int] = {}
     for finding in findings:
         if finding.usage == "dependency_only" or not finding.algorithm:
             continue
         algorithms[finding.algorithm] = algorithms.get(finding.algorithm, 0) + 1
     ordered = {name: algorithms[name] for name in sorted(algorithms)}
+    statuses = [context.finding_status for context in contexts]
     return ScanSummary(
-        files_scanned=files_scanned,
-        files_skipped=sum(skip_reasons.values()),
-        skip_reasons=dict(sorted(skip_reasons.items())),
+        files_scanned=result.files_scanned,
+        files_skipped=sum(result.skip_reasons.values()),
+        skip_reasons=dict(sorted(result.skip_reasons.items())),
         findings=len(findings),
         high_confidence=sum(1 for finding in findings if finding.confidence == "high"),
         medium_confidence=sum(1 for finding in findings if finding.confidence == "medium"),
         low_confidence=sum(1 for finding in findings if finding.confidence == "low"),
         algorithms=ordered,
+        confirmed_findings=statuses.count(FindingStatus.CONFIRMED),
+        probable_findings=statuses.count(FindingStatus.PROBABLE),
+        weak_signal_findings=statuses.count(FindingStatus.WEAK_SIGNAL),
+        dependencies=len(result.dependencies),
+        crypto_dependencies=sum(
+            1
+            for dependency in result.dependencies
+            if dependency.crypto_relevance == CryptoRelevance.CRYPTOGRAPHIC_LIBRARY.value
+        ),
+        malformed_manifests=result.malformed_manifests,
     )
 
 

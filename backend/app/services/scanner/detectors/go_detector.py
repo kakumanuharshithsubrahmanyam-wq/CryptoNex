@@ -34,6 +34,8 @@ _CALLS = (
         "algorithm_selection",
     ),
 )
+_IMPORT_DECLARATION = re.compile(r'\bimport\s*(?:\([^)]*\)|(?:[\w.]+\s+)?"[^"\n]*")')
+_IMPORT_PATH = re.compile(r'"(crypto/[a-z0-9]+)"')
 
 
 def detect_go(source: str, file_path: str, settings: Settings) -> list[RawFinding]:
@@ -57,8 +59,8 @@ def detect_go(source: str, file_path: str, settings: Settings) -> list[RawFindin
                     "api_detection",
                 )
             )
-    for match, line_start, line_end in each_match(source, "go", re.compile(r'"(crypto/[a-z0-9]+)"')):
-        spec = _IMPORTS.get(match.group(1))
+    for package, line_start, line_end in _imports(source):
+        spec = _IMPORTS.get(package)
         if spec is None or spec[0] in called_algorithms:
             continue
         algorithm, family, library = spec
@@ -78,6 +80,16 @@ def detect_go(source: str, file_path: str, settings: Settings) -> list[RawFindin
             )
         )
     return findings
+
+
+def _imports(source: str):
+    """Yield (package, line_start, line_end) for paths inside import declarations."""
+    for match, _line_start, _line_end in each_match(source, "go", _IMPORT_DECLARATION):
+        block = match.group(0)
+        for path in _IMPORT_PATH.finditer(block):
+            offset = match.start() + path.start()
+            line = source.count("\n", 0, offset) + 1
+            yield path.group(1), line, line
 
 
 def _finding(

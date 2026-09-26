@@ -1,10 +1,51 @@
 """Comment masking and bounded evidence snippets.
 
 Masking keeps newlines and string length stable so match offsets stay aligned
-with the original file. Snippets are taken from the original text and capped.
+with the original file. Snippets are taken from the original text, redacted,
+and capped.
 """
 
+import re
+
 from app.core.config import Settings
+
+REDACTED = "[REDACTED]"
+
+_PRIVATE_KEY_BLOCK = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)",
+    re.DOTALL,
+)
+_SECRET_ASSIGNMENT = re.compile(
+    r"""(?ix)
+    (\b[\w\-]*(?:password|passwd|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key
+        |private[_\-]?key|client[_\-]?secret|credential)s?[\w\-]*["']?\s*[:=]\s*)
+    ([bru]{0,2})("[^"\n]*"|'[^'\n]*')
+    """
+)
+_URL_CREDENTIALS = re.compile(r"(?i)\b([a-z][a-z0-9+.\-]*://)[^/@\s:]+:[^/@\s]+@")
+_TOKEN_FORMATS = re.compile(
+    r"\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+    r"|sk-[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9\-]{10,})\b"
+)
+
+
+def redact_secrets(text: str) -> str:
+    """Remove values that look like credentials before evidence is stored."""
+    redacted = _PRIVATE_KEY_BLOCK.sub("[REDACTED PRIVATE KEY]", text)
+    redacted = _SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)[0]}{REDACTED}{match.group(3)[0]}",
+        redacted,
+    )
+    redacted = _URL_CREDENTIALS.sub(lambda match: f"{match.group(1)}{REDACTED}@", redacted)
+    return _TOKEN_FORMATS.sub(REDACTED, redacted)
+
+
+def bounded(text: str, settings: Settings) -> str:
+    collapsed = " ".join(redact_secrets(text).split())
+    limit = settings.evidence_max_chars
+    if len(collapsed) > limit:
+        return collapsed[: limit - 1] + "…"
+    return collapsed
 
 
 def mask_comments(source: str, style: str) -> tuple[str, list[tuple[int, int]]]:
@@ -53,12 +94,8 @@ def line_bounds(source: str, start: int, end: int) -> tuple[int, int]:
 def snippet(source: str, line_start: int, line_end: int, settings: Settings) -> str:
     lines = source.splitlines()
     selected = lines[max(0, line_start - 1) : max(line_start, line_end)]
-    text = " ".join(line.strip() for line in selected if line.strip())
-    collapsed = " ".join(text.split())
-    limit = settings.evidence_max_chars
-    if len(collapsed) > limit:
-        return collapsed[: limit - 1] + "…"
-    return collapsed or "[call]"
+    text = "\n".join(line.strip() for line in selected if line.strip())
+    return bounded(text, settings) or "[call]"
 
 
 def _peek(chars: list[str], index: int) -> str:

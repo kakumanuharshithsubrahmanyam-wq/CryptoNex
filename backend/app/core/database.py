@@ -51,17 +51,37 @@ _PROJECT_COLUMN_UPGRADES = (
     ("manifest_json", "ALTER TABLE projects ADD COLUMN manifest_json TEXT"),
 )
 
+_FINDING_COLUMN_UPGRADES = tuple(
+    (name, f"ALTER TABLE crypto_findings ADD COLUMN {name} {column_type}")
+    for name, column_type in (
+        ("evidence_type", "VARCHAR(32)"),
+        ("confidence_reasons_json", "TEXT"),
+        ("finding_status", "VARCHAR(16)"),
+        ("cryptographic_role", "VARCHAR(32)"),
+        ("parameter_completeness", "VARCHAR(16)"),
+        ("security_concern", "VARCHAR(32)"),
+        ("quantum_relevance", "VARCHAR(40)"),
+    )
+)
 
-def _upgrade_project_columns(engine: Engine) -> None:
-    """Add Phase 1 columns to a database created before those fields existed."""
+_COLUMN_UPGRADES = {
+    "projects": _PROJECT_COLUMN_UPGRADES,
+    "crypto_findings": _FINDING_COLUMN_UPGRADES,
+}
+
+
+def _upgrade_columns(engine: Engine) -> None:
+    """Add columns to tables created before those fields existed."""
     inspector = inspect(engine)
-    if "projects" not in inspector.get_table_names():
-        return
-    existing = {column["name"] for column in inspector.get_columns("projects")}
+    tables = set(inspector.get_table_names())
     with engine.begin() as connection:
-        for name, statement in _PROJECT_COLUMN_UPGRADES:
-            if name not in existing:
-                connection.execute(text(statement))
+        for table, upgrades in _COLUMN_UPGRADES.items():
+            if table not in tables:
+                continue
+            existing = {column["name"] for column in inspector.get_columns(table)}
+            for name, statement in upgrades:
+                if name not in existing:
+                    connection.execute(text(statement))
 
 
 def init_db(engine: Engine) -> None:
@@ -69,7 +89,7 @@ def init_db(engine: Engine) -> None:
     import app.models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
-    _upgrade_project_columns(engine)
+    _upgrade_columns(engine)
 
 
 def get_db(request: Request) -> Iterator[Session]:

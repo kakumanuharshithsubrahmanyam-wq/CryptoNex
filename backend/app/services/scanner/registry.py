@@ -1,4 +1,10 @@
-"""Canonical cryptographic algorithms and dependency package names."""
+"""Canonical cryptographic algorithms.
+
+Each spec also carries the deterministic context used by the evidence and
+context classifier: which parameters describe an instance of the algorithm,
+its cryptographic concern category, and its post-quantum migration family.
+These are classifications of the primitive, not verdicts about an application.
+"""
 
 import re
 from dataclasses import dataclass
@@ -11,6 +17,11 @@ class AlgorithmSpec:
     canonical_name: str
     family: AlgorithmFamily
     aliases: tuple[str, ...]
+    # Parameters that describe an instance. An empty tuple means the primitive
+    # has no tunable parameters that the scanner needs to extract.
+    parameters: tuple[str, ...] = ()
+    security_concern: str = "unknown"
+    quantum_relevance: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -23,37 +34,73 @@ class ResolvedAlgorithm:
     hash_name: str | None = None
 
 
+def _asym(name: str, aliases: tuple[str, ...], parameters: tuple[str, ...], concern: str, quantum: str) -> AlgorithmSpec:
+    return AlgorithmSpec(name, "asymmetric", aliases, parameters, concern, quantum)
+
+
+def _sym(name: str, aliases: tuple[str, ...], parameters: tuple[str, ...], concern: str) -> AlgorithmSpec:
+    return AlgorithmSpec(name, "symmetric", aliases, parameters, concern, "symmetric")
+
+
+def _hash(name: str, aliases: tuple[str, ...], concern: str = "modern_hash") -> AlgorithmSpec:
+    return AlgorithmSpec(name, "hash", aliases, (), concern, "hash")
+
+
+def _mac(name: str, aliases: tuple[str, ...], parameters: tuple[str, ...]) -> AlgorithmSpec:
+    return AlgorithmSpec(name, "mac", aliases, parameters, "mac", "mac")
+
+
+def _kdf(name: str, aliases: tuple[str, ...], parameters: tuple[str, ...]) -> AlgorithmSpec:
+    return AlgorithmSpec(name, "kdf", aliases, parameters, "key_derivation", "key_derivation")
+
+
 _SPECS: tuple[AlgorithmSpec, ...] = (
-    AlgorithmSpec("RSA", "asymmetric", ("rsa", "rsa-oaep", "rsa-pss", "rsassa-pkcs1-v1_5")),
-    AlgorithmSpec("DSA", "asymmetric", ("dsa",)),
-    AlgorithmSpec("ECDSA", "asymmetric", ("ecdsa",)),
-    AlgorithmSpec("ECDH", "asymmetric", ("ecdh",)),
-    AlgorithmSpec("Diffie-Hellman", "asymmetric", ("diffie-hellman", "dh", "diffiehellman")),
-    AlgorithmSpec("Ed25519", "asymmetric", ("ed25519",)),
-    AlgorithmSpec("Ed448", "asymmetric", ("ed448",)),
-    AlgorithmSpec("AES", "symmetric", ("aes",)),
-    AlgorithmSpec("DES", "symmetric", ("des",)),
-    AlgorithmSpec("3DES", "symmetric", ("3des", "triple des", "tripledes", "des-ede", "des-ede3")),
-    AlgorithmSpec("Blowfish", "symmetric", ("blowfish",)),
-    AlgorithmSpec("ChaCha20", "symmetric", ("chacha20",)),
-    AlgorithmSpec("ChaCha20-Poly1305", "symmetric", ("chacha20-poly1305", "chacha20poly1305")),
-    AlgorithmSpec("MD5", "hash", ("md5",)),
-    AlgorithmSpec("SHA-1", "hash", ("sha-1", "sha1")),
-    AlgorithmSpec("SHA-224", "hash", ("sha-224", "sha224")),
-    AlgorithmSpec("SHA-256", "hash", ("sha-256", "sha256")),
-    AlgorithmSpec("SHA-384", "hash", ("sha-384", "sha384")),
-    AlgorithmSpec("SHA-512", "hash", ("sha-512", "sha512")),
-    AlgorithmSpec("SHA-3", "hash", ("sha-3", "sha3", "sha3-224", "sha3-256", "sha3-384", "sha3-512")),
-    AlgorithmSpec("BLAKE2", "hash", ("blake2", "blake2b", "blake2s")),
-    AlgorithmSpec("BLAKE3", "hash", ("blake3",)),
-    AlgorithmSpec("HMAC", "mac", ("hmac",)),
-    AlgorithmSpec("CMAC", "mac", ("cmac",)),
-    AlgorithmSpec("Poly1305", "mac", ("poly1305",)),
-    AlgorithmSpec("PBKDF2", "kdf", ("pbkdf2", "pbkdf2hmac")),
-    AlgorithmSpec("scrypt", "kdf", ("scrypt",)),
-    AlgorithmSpec("Argon2", "kdf", ("argon2", "argon2id", "argon2i", "argon2d")),
-    AlgorithmSpec("HKDF", "kdf", ("hkdf",)),
+    _asym(
+        "RSA",
+        ("rsa", "rsa-oaep", "rsa-pss", "rsassa-pkcs1-v1_5"),
+        ("key_size",),
+        "classical_public_key",
+        "classical_public_key",
+    ),
+    _asym("DSA", ("dsa",), ("key_size",), "classical_signature", "classical_signature"),
+    _asym("ECDSA", ("ecdsa",), ("curve",), "classical_signature", "classical_signature"),
+    _asym("ECDH", ("ecdh",), ("curve",), "classical_key_exchange", "classical_key_establishment"),
+    _asym(
+        "Diffie-Hellman",
+        ("diffie-hellman", "dh", "diffiehellman"),
+        ("key_size",),
+        "classical_key_exchange",
+        "classical_key_establishment",
+    ),
+    _asym("Ed25519", ("ed25519",), (), "classical_signature", "classical_signature"),
+    _asym("Ed448", ("ed448",), (), "classical_signature", "classical_signature"),
+    _sym("AES", ("aes",), ("key_size", "mode"), "symmetric_cryptography"),
+    _sym("DES", ("des",), ("mode",), "legacy_cipher"),
+    _sym("3DES", ("3des", "triple des", "tripledes", "des-ede", "des-ede3"), ("key_size", "mode"), "legacy_cipher"),
+    _sym("Blowfish", ("blowfish",), ("key_size", "mode"), "legacy_cipher"),
+    _sym("ChaCha20", ("chacha20",), (), "symmetric_cryptography"),
+    _sym("ChaCha20-Poly1305", ("chacha20-poly1305", "chacha20poly1305"), (), "symmetric_cryptography"),
+    _hash("MD5", ("md5",), "legacy_hash"),
+    _hash("SHA-1", ("sha-1", "sha1"), "legacy_hash"),
+    _hash("SHA-224", ("sha-224", "sha224")),
+    _hash("SHA-256", ("sha-256", "sha256")),
+    _hash("SHA-384", ("sha-384", "sha384")),
+    _hash("SHA-512", ("sha-512", "sha512")),
+    _hash("SHA-3", ("sha-3", "sha3", "sha3-224", "sha3-256", "sha3-384", "sha3-512")),
+    _hash("BLAKE2", ("blake2", "blake2b", "blake2s")),
+    _hash("BLAKE3", ("blake3",)),
+    _mac("HMAC", ("hmac",), ("hash",)),
+    _mac("CMAC", ("cmac",), ("cipher",)),
+    _mac("Poly1305", ("poly1305",), ()),
+    _kdf("PBKDF2", ("pbkdf2", "pbkdf2hmac"), ("hash", "iterations")),
+    _kdf("scrypt", ("scrypt",), ("cost",)),
+    _kdf("Argon2", ("argon2", "argon2id", "argon2i", "argon2d"), ("cost",)),
+    _kdf("HKDF", ("hkdf",), ("hash",)),
 )
+
+# Key derivation functions designed to stretch low-entropy passwords.
+PASSWORD_BASED_KDFS = frozenset({"PBKDF2", "scrypt", "Argon2"})
+
 
 def _normalize(value: str) -> str:
     return "".join(character for character in value.lower() if character not in " _")
@@ -81,21 +128,6 @@ _CURVES = {
 
 _MODES = {"gcm", "cbc", "ctr", "ecb", "cfb", "ofb", "ccm"}
 _IGNORE_MODE_TOKENS = {"nopadding", "pkcs5padding", "pkcs7padding", "padding"}
-
-# Package names that indicate a cryptographic dependency. Presence is not usage.
-CRYPTO_DEPENDENCIES: dict[str, str] = {
-    "cryptography": "cryptography",
-    "pycryptodome": "PyCryptodome",
-    "pycrypto": "PyCryptodome",
-    "bcprov-jdk15on": "Bouncy Castle",
-    "bcprov-jdk18on": "Bouncy Castle",
-    "bcpkix-jdk18on": "Bouncy Castle",
-    "crypto-js": "crypto-js",
-    "node-forge": "node-forge",
-    "@noble/hashes": "@noble/hashes",
-    "@noble/ciphers": "@noble/ciphers",
-    "golang.org/x/crypto": "golang.org/x/crypto",
-}
 
 
 def lookup_algorithm(token: str) -> AlgorithmSpec | None:
