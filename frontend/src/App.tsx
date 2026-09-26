@@ -5,6 +5,8 @@ import {
   createZipProject,
   ingestProject,
   repositoryNameFromUrl,
+  scanProject,
+  type CryptoScanResult,
   type ProjectResult,
 } from "./api/projects"
 import "./App.css"
@@ -20,10 +22,17 @@ type ScanState =
   | { kind: "ready"; project: ProjectResult }
   | { kind: "error"; message: string }
 
+type CryptoState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "done"; result: CryptoScanResult }
+  | { kind: "error"; message: string }
+
 function App() {
   const [connection, setConnection] = useState<ConnectionState>({ kind: "loading" })
   const [repositoryUrl, setRepositoryUrl] = useState("")
   const [scan, setScan] = useState<ScanState>({ kind: "idle" })
+  const [crypto, setCrypto] = useState<CryptoState>({ kind: "idle" })
 
   const checkConnection = useCallback(() => {
     setConnection({ kind: "loading" })
@@ -49,6 +58,7 @@ function App() {
       setScan({ kind: "error", message: "Enter a GitHub repository URL." })
       return
     }
+    setCrypto({ kind: "idle" })
     setScan({ kind: "running", message: "Ingesting repository…" })
     try {
       const created = await createGitHubProject(repositoryNameFromUrl(url), url)
@@ -65,6 +75,7 @@ function App() {
       return
     }
     const name = file.name.replace(/\.zip$/i, "").slice(0, 255) || "Uploaded repository"
+    setCrypto({ kind: "idle" })
     setScan({ kind: "running", message: "Ingesting ZIP archive…" })
     try {
       const created = await createZipProject(name, file)
@@ -76,11 +87,29 @@ function App() {
     }
   }
 
+  async function runCryptoScan() {
+    if (scan.kind !== "ready") {
+      return
+    }
+    setCrypto({ kind: "running" })
+    try {
+      const result = await scanProject(scan.project.id)
+      setCrypto({ kind: "done", result })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Crypto scan failed."
+      setCrypto({ kind: "error", message })
+    }
+  }
+
+  const busy = scan.kind === "running" || crypto.kind === "running"
+
   return (
     <main className="shell">
-      <p className="phase">Phase 1 — Repository Ingestion</p>
+      <p className="phase">Phase 2 — Deterministic Crypto Detection</p>
       <h1>CryptoNex</h1>
-      <p className="lede">Scan a public GitHub repository or a ZIP archive.</p>
+      <p className="lede">
+        Ingest a public GitHub repository or a ZIP archive, then run a deterministic crypto scan.
+      </p>
       <form className="scan" onSubmit={startGitHubScan}>
         <label htmlFor="repository-url">GitHub Repository URL</label>
         <input
@@ -92,7 +121,7 @@ function App() {
           onChange={(event) => setRepositoryUrl(event.target.value)}
           autoComplete="off"
         />
-        <button type="submit" disabled={scan.kind === "running"}>
+        <button type="submit" disabled={busy}>
           Start Scan
         </button>
         <p className="or">or</p>
@@ -101,7 +130,7 @@ function App() {
           <input
             type="file"
             accept=".zip,application/zip"
-            disabled={scan.kind === "running"}
+            disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0]
               void startZipScan(file)
@@ -126,6 +155,24 @@ function App() {
               bytes
             </p>
             <p className="meta">{formatLanguages(scan.project.manifest.languages)}</p>
+            <button type="button" onClick={() => void runCryptoScan()} disabled={busy}>
+              {crypto.kind === "running" ? "Scanning…" : "Run crypto scan"}
+            </button>
+            {crypto.kind === "done" && (
+              <div className="crypto-summary">
+                <p className="ok">Crypto Scan</p>
+                <p className="meta">Status: {crypto.result.status}</p>
+                <p className="meta">Files scanned: {crypto.result.summary.files_scanned}</p>
+                <p className="meta">Findings: {crypto.result.summary.findings}</p>
+                <AlgorithmCounts algorithms={crypto.result.summary.algorithms} />
+              </div>
+            )}
+            {crypto.kind === "error" && (
+              <>
+                <p className="bad">Crypto scan failed</p>
+                <p>{crypto.message}</p>
+              </>
+            )}
           </>
         )}
         {scan.kind === "ready" && !scan.project.manifest && (
@@ -151,6 +198,22 @@ function App() {
         )}
       </section>
     </main>
+  )
+}
+
+function AlgorithmCounts({ algorithms }: { algorithms: Record<string, number> }) {
+  const entries = Object.entries(algorithms)
+  if (entries.length === 0) {
+    return <p className="meta">No algorithms detected</p>
+  }
+  return (
+    <ul className="algorithms">
+      {entries.map(([name, count]) => (
+        <li key={name}>
+          {name}: {count}
+        </li>
+      ))}
+    </ul>
   )
 }
 

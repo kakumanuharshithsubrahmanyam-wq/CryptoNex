@@ -93,6 +93,22 @@ h1 {
   font-size: 0.92rem;
 }
 
+.crypto-summary {
+  margin-top: 1rem;
+}
+
+.algorithms {
+  margin: 0.55rem 0 0;
+  padding-left: 1.1rem;
+  color: #5e574e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+}
+
+.algorithms li + li {
+  margin-top: 0.2rem;
+}
+
 .status .bad + p {
   margin-top: 0.45rem;
 }

@@ -2,13 +2,13 @@
 
 ## Overview
 
-CryptoNex is a platform for post-quantum cryptography migration and crypto-agility. Phase 1 ingests a public GitHub repository or a ZIP archive into an isolated workspace and records a file manifest. It does not detect cryptographic algorithms or execute repository code.
+CryptoNex is a platform for post-quantum cryptography migration and crypto-agility. Phase 1 ingests a public GitHub repository or a ZIP archive into an isolated workspace and records a file manifest. Phase 2 runs deterministic static analysis on that manifest and records evidence-backed cryptographic findings. CryptoNex does not execute repository code.
 
 ## Current Phase
 
-Phase 1 — Repository Ingestion
+Phase 2 — Deterministic Cryptographic Detection
 
-The API still exposes `GET /api/v1/health`. A project can be created from a public GitHub HTTPS URL or a ZIP upload, then ingested with `POST /api/v1/projects/{id}/ingest`. Ingestion clones or extracts files, applies size limits, and stores a manifest of paths, sizes, hashes, languages, and file categories. Cryptographic analysis is not implemented.
+The API still exposes `GET /api/v1/health`. A project can be created from a public GitHub HTTPS URL or a ZIP upload, then ingested with `POST /api/v1/projects/{id}/ingest`. After ingestion succeeds, `POST /api/v1/projects/{id}/scan` runs the deterministic scanner and returns a scan summary. Detection is static analysis of source text and dependency manifests. It does not establish that a system is quantum-safe or quantum-vulnerable.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ Later phases can add routes, services, and models beside this layout without cha
 │   │   ├── core/            # settings, logging, database, errors
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── schemas/         # API request and response models
-│   │   ├── services/        # health and repository ingestion
+│   │   ├── services/        # health, ingestion, and crypto scanning
 │   │   └── main.py          # application factory
 │   ├── tests/
 │   ├── requirements.txt
@@ -90,7 +90,7 @@ cp .env.example .env
 npm run dev
 ```
 
-The dev server prints a local URL, usually `http://localhost:5173`. The page calls `GET /api/v1/health` and shows **CryptoNex API Connected** when the backend responds. It also accepts a GitHub repository URL or a ZIP file and shows the ingestion result.
+The dev server prints a local URL, usually `http://localhost:5173`. The page calls `GET /api/v1/health` and shows **CryptoNex API Connected** when the backend responds. It accepts a GitHub repository URL or a ZIP file, shows the ingestion result, and can run a crypto scan on a ready project.
 
 ## Environment Variables
 
@@ -110,6 +110,8 @@ Backend (process environment or `.env`):
 | `CLONE_TIMEOUT_SECONDS` | Maximum git clone duration | `120` |
 | `MAX_ZIP_SIZE_MB` | Maximum uploaded ZIP size | `50` |
 | `MAX_ZIP_EXTRACTED_SIZE_MB` | Maximum uncompressed ZIP size | `200` |
+| `SCAN_EXCLUDED_DIRECTORIES` | Comma-separated directories skipped by the scanner | `node_modules,vendor,dist,build,.git,__pycache__,.venv,venv,target` |
+| `EVIDENCE_MAX_CHARS` | Maximum characters in a finding evidence snippet | `240` |
 
 When `ENVIRONMENT=production`, `CORS_ORIGINS` must be an explicit list. An empty value or `*` fails startup.
 
@@ -198,12 +200,75 @@ Example ingest response after a successful run:
 }
 ```
 
-Each file record uses `relative_path`, `filename`, `extension`, `detected_language`, `file_size`, `line_count`, `sha256`, and `category`. Categories come from filename and extension heuristics: source, configuration, dependency, certificate, documentation, binary, or unknown. Ingestion does not perform cryptographic analysis.
+Each file record uses `relative_path`, `filename`, `extension`, `detected_language`, `file_size`, `line_count`, `sha256`, and `category`. Categories come from filename and extension heuristics: source, configuration, dependency, certificate, documentation, binary, or unknown.
 
 Repositories are analyzed as untrusted data. CryptoNex does not execute repository code, install dependencies, run build scripts, or fetch Git submodules. Git is invoked with a fixed argument list and `shell` is never enabled. The user-supplied URL is parsed and replaced with a canonical `https://github.com/{owner}/{name}.git` value before clone. ZIP entry paths are normalized and must stay inside the server workspace. Failed ingestions delete that workspace. API responses do not include server filesystem paths, git output, secrets, or stack traces.
 
+## Deterministic Cryptographic Detection
+
+`POST /api/v1/projects/{id}/scan` requires a project whose ingestion status is `ready`. The scanner reads the stored manifest, analyzes eligible files in the workspace, and persists a scan plus cryptographic findings. The response is a summary:
+
+```json
+{
+  "scan_id": 1,
+  "project_id": 1,
+  "status": "completed",
+  "summary": {
+    "files_scanned": 3,
+    "files_skipped": 1,
+    "skip_reasons": { "documentation": 1 },
+    "findings": 2,
+    "high_confidence": 1,
+    "medium_confidence": 0,
+    "low_confidence": 1,
+    "algorithms": { "RSA": 1 }
+  }
+}
+```
+
+`files_skipped` and `skip_reasons` record why a manifest entry was not treated as source. Dependency-only findings are included in `findings` and confidence counts. They are omitted from `algorithms` because a package name is not an algorithm.
+
+### Languages
+
+Python, Java, JavaScript, TypeScript, Go, C, and C++. Python uses `ast.parse` on source text. The other languages use language-aware patterns on comment-masked source. The parser never executes AST nodes.
+
+### Algorithms
+
+Asymmetric: RSA, DSA, ECDSA, ECDH, Diffie-Hellman, Ed25519, Ed448.
+
+Symmetric: AES, DES, 3DES, Blowfish, ChaCha20, ChaCha20-Poly1305.
+
+Hash: MD5, SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-3, BLAKE2, BLAKE3.
+
+MAC: HMAC, CMAC, Poly1305.
+
+Key derivation: PBKDF2, scrypt, Argon2, HKDF.
+
+Canonical names, aliases, and families live in one algorithm registry. A finding leaves `key_size`, `mode`, `curve`, and `algorithm` null when the source does not state them.
+
+### Libraries
+
+Python `cryptography` and PyCryptodome; Java `javax.crypto`, `java.security`, and Bouncy Castle; Web Crypto and Node.js `crypto`; Go `crypto/rsa`, `crypto/aes`, `crypto/ecdsa`, `crypto/ed25519`, `crypto/sha256`, and `crypto/hmac`; OpenSSL EVP, RSA, and EC calls. A library is recorded only when an import, API call, or dependency declaration supports it.
+
+### Dependency manifests
+
+`requirements.txt`, `pyproject.toml`, `Pipfile`, `poetry.lock`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.mod`, `go.sum`, `Cargo.toml`, and `Cargo.lock`.
+
+A known cryptographic dependency produces a finding with `usage` `dependency_only`, `detection_method` `dependency_detection`, `confidence` `low`, and `algorithm` null. Dependency presence does not prove active cryptographic usage.
+
+### Evidence and confidence
+
+Each finding stores a relative file path, line range, a bounded snippet, and a detection method: `import_detection`, `api_detection`, `ast_detection`, `pattern_detection`, `dependency_detection`, or `configuration_detection`. Confidence is `high`, `medium`, or `low`. High confidence requires a known library or API call plus an identifiable algorithm. Medium confidence is a strong pattern with incomplete context. Low confidence is a weak lexical or dependency indication.
+
+Comments, documentation, README text, and names that merely contain an algorithm word are not confirmed usage. Documentation files are skipped and counted under `skip_reasons`.
+
+### Limitations
+
+This is deterministic static analysis of an initial set of APIs. It does not cover every cryptographic library or every call shape. Indirect or dynamically constructed parameters stay unknown. A scan does not score risk, recommend migrations, or decide quantum safety. CryptoNex does not execute repository code, install dependencies, run package managers, or evaluate repository expressions.
+
 ## Security Baseline
 
+- Repository contents are untrusted. The scanner reads and parses text. It does not execute repository code, import repository modules, or run commands derived from repository content.
 - Request bodies are validated with Pydantic where a route accepts JSON input.
 - ZIP uploads are read with a size cap and are not executed.
 - Error responses use one JSON envelope and do not include stack traces or exception text.

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     clone_timeout_seconds: int = 120
     max_zip_size_mb: int = 50
     max_zip_extracted_size_mb: int = 200
+    scan_excluded_directories: str = (
+        "node_modules,vendor,dist,build,.git,__pycache__,.venv,venv,target"
+    )
+    evidence_max_chars: int = 240
 
     @field_validator("database_url")
     @classmethod
@@ -75,6 +79,13 @@ class Settings(BaseSettings):
     def limits_must_be_positive(cls, value: int) -> int:
         if value < 1:
             raise ValueError("Ingestion limits must be at least 1")
+        return value
+
+    @field_validator("evidence_max_chars")
+    @classmethod
+    def evidence_limit_must_be_positive(cls, value: int) -> int:
+        if value < 40:
+            raise ValueError("EVIDENCE_MAX_CHARS must be at least 40")
         return value
 
     @field_validator("log_level")

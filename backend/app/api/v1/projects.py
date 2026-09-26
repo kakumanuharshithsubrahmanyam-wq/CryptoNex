@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.project import ProjectCreateRequest, ProjectResponse
+from app.schemas.scan import ScanResponse
 from app.services.ingestion.service import ingest_project, project_response
 from app.services.projects import create_github_project, create_zip_project, get_project
+from app.services.scanner.service import scan_project
 
 router = APIRouter(prefix="/projects")
 
@@ -43,3 +45,13 @@ def ingest(
 ) -> ProjectResponse:
     project = get_project(session, project_id)
     return ingest_project(session, project, request.app.state.settings)
+
+
+@router.post("/{project_id}/scan", response_model=ScanResponse)
+def scan(
+    project_id: int,
+    request: Request,
+    session: Session = Depends(get_db),
+) -> ScanResponse:
+    project = get_project(session, project_id)
+    return scan_project(session, project, request.app.state.settings)
