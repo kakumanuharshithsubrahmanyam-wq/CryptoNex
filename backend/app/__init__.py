@@ -1,0 +1,1 @@
+"""CryptoNex API application package."""

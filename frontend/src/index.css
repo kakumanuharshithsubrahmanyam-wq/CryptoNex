@@ -1,0 +1,16 @@
+:root {
+  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  color: #1c1915;
+  background: #f3efe7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}

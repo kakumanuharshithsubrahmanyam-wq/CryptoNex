@@ -1,0 +1,70 @@
+.shell {
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 4.5rem 1.5rem 3rem;
+}
+
+.phase {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6d655c;
+}
+
+h1 {
+  margin: 0.45rem 0 0.75rem;
+  font-size: 2.6rem;
+  line-height: 1.05;
+  font-weight: 650;
+}
+
+.lede {
+  margin: 0 0 1.5rem;
+  color: #3f3a34;
+}
+
+.status {
+  border: 1px solid #d8d0c4;
+  background: #fffdf8;
+  padding: 1.2rem 1.3rem 1.3rem;
+}
+
+.status p {
+  margin: 0;
+}
+
+.ok {
+  color: #0d6a4b;
+  font-weight: 650;
+}
+
+.bad {
+  color: #8f2d2d;
+  font-weight: 650;
+}
+
+.meta {
+  margin-top: 0.45rem !important;
+  color: #5e574e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+}
+
+.status .bad + p {
+  margin-top: 0.45rem;
+}
+
+button {
+  margin-top: 0.9rem;
+  border: 1px solid #1c1915;
+  background: #1c1915;
+  color: #f7f4ee;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #3a342c;
+}
