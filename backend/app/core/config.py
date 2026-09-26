@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         "node_modules,vendor,dist,build,.git,__pycache__,.venv,venv,target"
     )
     evidence_max_chars: int = 240
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_timeout_seconds: int = 30
 
     @field_validator("database_url")
     @classmethod
@@ -86,6 +90,18 @@ class Settings(BaseSettings):
     def evidence_limit_must_be_positive(cls, value: int) -> int:
         if value < 40:
             raise ValueError("EVIDENCE_MAX_CHARS must be at least 40")
+        return value
+
+    @field_validator("openai_api_key", "openai_model", "openai_base_url")
+    @classmethod
+    def strip_openai_settings(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("openai_timeout_seconds")
+    @classmethod
+    def openai_timeout_must_be_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("OPENAI_TIMEOUT_SECONDS must be at least 1")
         return value
 
     @field_validator("log_level")

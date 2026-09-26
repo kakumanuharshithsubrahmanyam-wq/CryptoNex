@@ -2,13 +2,13 @@
 
 ## Overview
 
-CryptoNex is a platform for post-quantum cryptography migration and crypto-agility. Phase 1 ingests a repository. Phase 2 detects cryptographic usage. Phase 3 adds evidence and context. Phase 4 inventories dependencies. Phase 5 detects certificates, TLS, and SSH configuration. Phase 6 builds a CryptoNex CBOM. Phase 7 exposes a queryable knowledge graph. CryptoNex does not execute repository code and does not claim an application is quantum-safe merely because a primitive was or was not detected.
+CryptoNex is a platform for post-quantum cryptography migration and crypto-agility. Phase 1 ingests a repository. Phase 2 detects cryptographic usage. Phase 3 adds evidence and context. Phase 4 inventories dependencies. Phase 5 detects certificates, TLS, and SSH configuration. Phase 6 builds a CryptoNex CBOM. Phase 7 exposes a queryable knowledge graph. Phases 8–11 consume those stored records for migration planning, optional AI explanation, PQC/hybrid simulation, CI policy, drift, and reports. CryptoNex does not execute repository code and does not claim an application is quantum-safe merely because a primitive was or was not detected.
 
 ## Current Phase
 
-Phase 7 — Crypto Knowledge Graph
+Phase 11 — CI/CD Crypto Firewall, Drift, and Security Reports
 
-`POST /api/v1/projects/{id}/scan` still runs the full pipeline. After a scan completes, the backend can return findings, dependencies, security artifacts, a CBOM, an inventory, and a knowledge graph. This is deterministic static analysis of repository text. It does not prove runtime behavior and does not establish that a system is quantum-safe or quantum-vulnerable.
+`POST /api/v1/projects/{id}/scan` still runs the Phase 1–7 pipeline. After a scan completes, later phases read `CryptoFinding`, `Dependency`, `SecurityArtifact`, CBOM, and the knowledge graph. They do not rescan the repository and they do not implement cryptographic algorithms.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ Later phases can add routes, services, and models beside this layout without cha
 │   │   ├── core/            # settings, logging, database, errors
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── schemas/         # API request and response models
-│   │   ├── services/        # ingestion, scanning, context, dependencies, artifacts, CBOM, graph
+│   │   ├── services/        # ingestion, scanning, context, dependencies, artifacts, CBOM, graph, migration, AI, PQC, policy, reports
 │   │   └── main.py          # application factory
 │   ├── tests/
 │   ├── requirements.txt
@@ -112,6 +112,10 @@ Backend (process environment or `.env`):
 | `MAX_ZIP_EXTRACTED_SIZE_MB` | Maximum uncompressed ZIP size | `200` |
 | `SCAN_EXCLUDED_DIRECTORIES` | Comma-separated directories skipped by the scanner | `node_modules,vendor,dist,build,.git,__pycache__,.venv,venv,target` |
 | `EVIDENCE_MAX_CHARS` | Maximum characters in a finding evidence snippet | `240` |
+| `OPENAI_API_KEY` | Optional OpenAI-compatible API key for AI explanation | empty (deterministic fallback) |
+| `OPENAI_MODEL` | Model name sent to the OpenAI-compatible provider | `gpt-4o-mini` |
+| `OPENAI_BASE_URL` | OpenAI-compatible base URL | `https://api.openai.com/v1` |
+| `OPENAI_TIMEOUT_SECONDS` | Provider timeout | `30` |
 
 When `ENVIRONMENT=production`, `CORS_ORIGINS` must be an explicit list. An empty value or `*` fails startup.
 
@@ -270,7 +274,7 @@ Comments, documentation, README text, and names that merely contain an algorithm
 
 ### Limitations
 
-This is deterministic static analysis of an initial set of APIs. It does not cover every cryptographic library or every call shape. Indirect or dynamically constructed parameters stay unknown. A scan does not score risk, recommend migrations, or decide quantum safety. CryptoNex does not execute repository code, install dependencies, run package managers, or evaluate repository expressions.
+This is deterministic static analysis of an initial set of APIs. It does not cover every cryptographic library or every call shape. Indirect or dynamically constructed parameters stay unknown. The scanner itself does not decide quantum safety. Later phases add planning recommendations from stored findings; they still do not migrate source or prove a system is quantum-safe. CryptoNex does not execute repository code, install dependencies, run package managers, or evaluate repository expressions.
 
 ## Evidence, Confidence, and Cryptographic Context
 
@@ -410,11 +414,56 @@ Edges include `HAS_SCAN`, `CONTAINS_FINDING`, `USES_ALGORITHM`, `USES_LIBRARY`, 
 
 `GET /api/v1/scans/{scan_id}/graph` returns `nodes`, `edges`, and `summary`. Optional filters: `node_type`, `algorithm`, `file_path`, `dependency`.
 
-The graph is blast-radius ready: an algorithm can be followed to findings, files, and dependencies, and a protocol can be followed to cipher suites and algorithms. It does not compute a migration blast radius yet.
+The graph is traversed by later phases. An algorithm can be followed to findings, files, and dependencies, and a protocol can be followed to cipher suites and algorithms.
+
+## Migration Intelligence and Blast Radius
+
+Phase 8 builds a per-finding migration plan from stored records. A centralized registry maps algorithms by cryptographic role, not by name alone. RSA used for signatures is a candidate for ML-DSA/SLH-DSA. RSA used for key establishment is a candidate for ML-KEM. Unknown RSA roles return both families. AES-256 and SHA-256 are treated as modern symmetric/hash primitives and are not labeled quantum-vulnerable in the same way as RSA or ECDSA.
+
+Priority is `critical`, `high`, `medium`, `low`, or `informational`, always with reasons. Plans include candidate replacements, affected files/dependencies/protocols, migration and validation steps, unknowns, and warnings. Plans never claim that a migration occurred.
+
+`GET /api/v1/scans/{scan_id}/migrations` lists plans. `GET /api/v1/scans/{scan_id}/migrations/{finding_id}` returns one plan. `POST /api/v1/scans/{scan_id}/migration-plan` accepts an optional selected replacement. `GET /api/v1/scans/{scan_id}/blast-radius/{finding_id}` walks the stored graph.
+
+## AI Crypto Architect
+
+Phase 9 is optional explanation over grounded scan data. The AI provider does not scan source, invent findings, or replace the deterministic engine. If `OPENAI_API_KEY` is unset, endpoints return a deterministic fallback. Prompts include only sanitized structured evidence.
+
+`POST /api/v1/scans/{scan_id}/ai/architect`  
+`POST /api/v1/scans/{scan_id}/ai/root-cause`  
+`POST /api/v1/scans/{scan_id}/ask`
+
+Root cause is determined from stored evidence first. If the evidence is insufficient, the response is: `Root cause cannot be determined from static repository evidence.`
+
+## PQC Planning, Hybrid Migration, What-If, and Crypto-Agility
+
+Phase 10 is a planning layer. The PQC registry currently contains ML-KEM, ML-DSA, and SLH-DSA metadata. CryptoNex does not implement those algorithms.
+
+`GET /api/v1/scans/{scan_id}/pqc`  
+`GET /api/v1/scans/{scan_id}/hybrid/{finding_id}`  
+`POST /api/v1/scans/{scan_id}/what-if` with `finding_id`, `replacement`, and `mode` (`classical`, `hybrid`, or `pqc`)  
+`GET /api/v1/scans/{scan_id}/agility`
+
+Hybrid plans describe a conceptual path `classical → hybrid → PQC`. What-if results include affected graph entities, estimated complexity, compatibility notes, and a validation checklist. `source_migrated` is always false. Agility is `high_agility`, `moderate_agility`, `low_agility`, or `unknown` from stored evidence only.
+
+## CI/CD Policy, Drift, and Reports
+
+Phase 11 evaluates configurable policy, compares two completed scans, and builds a report from stored data.
+
+A repository may include `cryptonex-policy.yml`. The parser treats the file as data and does not execute it. Built-in defaults fail MD5, DES, and RSA key sizes below 2048; warn on RSA, SHA-1, and classical public-key use; and allow AES and SHA-256.
+
+`POST /api/v1/scans/{scan_id}/policy/check`  
+`POST /api/v1/projects/{project_id}/policy/check`  
+`GET /api/v1/projects/{project_id}/drift`  
+`GET /api/v1/scans/{scan_id}/report`  
+`GET /api/v1/scans/{scan_id}/report/export`
+
+Policy JSON includes `status` (`pass` / `warn` / `fail`) and `ci_exit_code` (`1` on fail). `python -m app.cli policy-check --scan-id N` exits with that code.
+
+Drift compares stable identities, not timestamps. Reports summarize stored counts, migration priorities, blast-radius size, policy status, CBOM summary, and limitations. They do not invent findings and do not assign an overall security score.
 
 ## Security Baseline
 
-- Repository contents are untrusted. The scanner reads and parses text. It does not execute repository code, import repository modules, run commands derived from repository content, connect to hosts, or load private keys.
+- Repository contents are untrusted. The scanner reads and parses text. It does not execute repository code, import repository modules, run commands derived from repository content, connect to hosts, or load private keys. Later phases consume stored rows. Optional AI calls receive sanitized structured evidence only; private keys, passwords, tokens, and API credentials are redacted and are not sent to the provider.
 - Request bodies are validated with Pydantic where a route accepts JSON input.
 - ZIP uploads are read with a size cap and are not executed.
 - Error responses use one JSON envelope and do not include stack traces or exception text.
