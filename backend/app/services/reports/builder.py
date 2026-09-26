@@ -7,6 +7,7 @@ import json
 from sqlalchemy.orm import Session
 
 from app.models.scan import Scan
+from app.schemas.scan import LanguageComposition, ScanSummary
 from app.services.cbom.queries import get_cbom, inventory
 from app.services.intelligence.snapshot import load_snapshot
 from app.services.migration.planner import list_plans
@@ -86,6 +87,7 @@ def build_report(session: Session, scan: Scan) -> dict:
         },
         "cbom_summary": cbom_doc.summary if hasattr(cbom_doc, "summary") else {},
         "crypto_agility": agility["classification"],
+        "language_composition": _language_composition(scan),
         "top_migration_actions": top_actions,
         "limitations": list(_LIMITATIONS),
     }
@@ -111,8 +113,24 @@ def render_markdown(document: dict) -> str:
         f"- Certificates: {document['certificate_counts']}",
         f"- Policy status: {document['policy_status']['status']}",
         "",
-        "## Migration priorities",
+        "## Repository Languages",
     ]
+    composition = document.get("language_composition") or {}
+    shares = composition.get("languages") or []
+    if not shares:
+        lines.append("- No recognized source files.")
+    else:
+        lines.append(
+            f"- Source files: {composition.get('total_source_files', 0)}; "
+            f"source lines: {composition.get('total_source_lines', 0)}"
+        )
+        for item in shares:
+            lines.append(
+                f"- {item['language']:<12} {item['percentage']:.1f}%  "
+                f"({item['file_count']} files, {item['total_lines']} lines)"
+            )
+        lines.append("- Language share is repository composition, not a security score.")
+    lines.extend(["", "## Migration priorities"])
     for name, count in document["migration_priorities"].items():
         lines.append(f"- {name}: {count}")
     lines.extend(["", "## Top migration actions"])
@@ -124,6 +142,13 @@ def render_markdown(document: dict) -> str:
     for item in document["limitations"]:
         lines.append(f"- {item}")
     return "\n".join(lines) + "\n"
+
+
+def _language_composition(scan: Scan) -> dict:
+    if not scan.summary_json:
+        return LanguageComposition().model_dump()
+    summary = ScanSummary.model_validate_json(scan.summary_json)
+    return summary.language_composition.model_dump()
 
 
 def _executive_summary(snapshot, plans, policy, certificates: int) -> str:

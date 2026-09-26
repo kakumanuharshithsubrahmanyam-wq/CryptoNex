@@ -7,6 +7,19 @@ from pydantic import BaseModel, Field
 from app.models.scan import ScanStatus
 
 
+class LanguageShare(BaseModel):
+    language: str
+    file_count: int
+    total_lines: int
+    percentage: float
+
+
+class LanguageComposition(BaseModel):
+    languages: list[LanguageShare] = Field(default_factory=list)
+    total_source_files: int = 0
+    total_source_lines: int = 0
+
+
 class ScanSummary(BaseModel):
     files_scanned: int
     files_skipped: int
@@ -25,6 +38,7 @@ class ScanSummary(BaseModel):
     artifacts: int = 0
     certificates: int = 0
     protocols: int = 0
+    language_composition: LanguageComposition = Field(default_factory=LanguageComposition)
 
 
 class ScanResponse(BaseModel):

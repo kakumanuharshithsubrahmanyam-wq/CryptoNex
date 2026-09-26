@@ -12,7 +12,7 @@ from app.core.exceptions import AppError
 from app.models.project import Project, ProjectStatus
 from app.models.scan import CryptoFinding, Scan, ScanStatus
 from app.schemas.project import RepositoryManifest
-from app.schemas.scan import ScanResponse, ScanSummary
+from app.schemas.scan import LanguageComposition, ScanResponse, ScanSummary
 from app.services.artifacts.persistence import artifact_row
 from app.services.cbom.builder import attach_cbom_children, build_cbom_document, persist_cbom
 from app.services.context.classifier import FindingContext, classify
@@ -23,6 +23,7 @@ from app.services.dependencies.types import CryptoRelevance
 from app.services.ingestion.workspace import source_directory
 from app.services.scanner.engine import ScanRun, scan_manifest
 from app.services.scanner.findings import RawFinding
+from app.services.scanner.languages import language_composition
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def scan_project(session: Session, project: Project, settings: Settings) -> Scan
                 details={"limit": settings.max_file_count},
             )
         result = scan_manifest(source_root, manifest, settings)
-        summary = _persist_run(session, project, scan, result)
+        summary = _persist_run(session, project, scan, result, manifest)
         logger.info("Scan completed project_id=%s scan_id=%s", project.id, scan.id)
         return ScanResponse(
             scan_id=scan.id,
@@ -88,7 +89,7 @@ def scan_isolated_tree(session: Session, project: Project, source_root: Path, se
     session.refresh(scan)
     try:
         result = scan_manifest(source_root, manifest, settings)
-        _persist_run(session, project, scan, result)
+        _persist_run(session, project, scan, result, manifest)
         return scan
     except AppError as exc:
         _fail(session, scan.id)
@@ -100,7 +101,13 @@ def scan_isolated_tree(session: Session, project: Project, source_root: Path, se
         raise AppError("SCAN_FAILED", "The cryptographic scan failed.", status_code=500) from exc
 
 
-def _persist_run(session: Session, project: Project, scan: Scan, result: ScanRun) -> ScanSummary:
+def _persist_run(
+    session: Session,
+    project: Project,
+    scan: Scan,
+    result: ScanRun,
+    manifest: RepositoryManifest | None = None,
+) -> ScanSummary:
     contexts = [classify(finding) for finding in result.findings]
     for finding, context in zip(result.findings, contexts):
         finding.confidence = context.confidence.value
@@ -130,7 +137,7 @@ def _persist_run(session: Session, project: Project, scan: Scan, result: ScanRun
     attach_cbom_children(cbom, cbom_components, cbom_relationships)
     session.add_all(cbom_components)
     session.add_all(cbom_relationships)
-    summary = _summary(result, contexts)
+    summary = _summary(result, contexts, manifest)
     scan.status = ScanStatus.COMPLETED.value
     scan.summary_json = summary.model_dump_json()
     session.commit()
@@ -186,7 +193,7 @@ def _row(project_id: int, scan_id: int, finding: RawFinding, context: FindingCon
     )
 
 
-def _summary(result: ScanRun, contexts: list[FindingContext]) -> ScanSummary:
+def _summary(result: ScanRun, contexts: list[FindingContext], manifest: RepositoryManifest | None = None) -> ScanSummary:
     findings = result.findings
     algorithms: dict[str, int] = {}
     for finding in findings:
@@ -217,6 +224,7 @@ def _summary(result: ScanRun, contexts: list[FindingContext]) -> ScanSummary:
         artifacts=len(result.artifacts),
         certificates=sum(1 for item in result.artifacts if item.artifact_type == "certificate"),
         protocols=sum(1 for item in result.artifacts if item.artifact_type in {"protocol", "ssh_config"}),
+        language_composition=LanguageComposition.model_validate(language_composition(manifest)),
     )
 
 

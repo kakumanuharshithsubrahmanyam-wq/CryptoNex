@@ -80,6 +80,12 @@ def test_scan_persists_context_and_dependency_links(api, tmp_path: Path, monkeyp
     assert (summary["high_confidence"], summary["low_confidence"]) == (1, 1)
     assert (summary["confirmed_findings"], summary["probable_findings"], summary["weak_signal_findings"]) == (1, 0, 1)
     assert (summary["dependencies"], summary["crypto_dependencies"], summary["malformed_manifests"]) == (3, 1, 0)
+    composition = summary["language_composition"]
+    assert composition["total_source_files"] == 1
+    assert composition["languages"] == [
+        {"language": "Python", "file_count": 1, "total_lines": 6, "percentage": 100.0}
+    ]
+    assert composition["total_source_lines"] == 6
 
     scan_id = body["scan_id"]
     detail = client.get(f"/api/v1/scans/{scan_id}").json()
