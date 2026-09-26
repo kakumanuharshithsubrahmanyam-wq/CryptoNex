@@ -22,6 +22,9 @@ class ScanSummary(BaseModel):
     dependencies: int = 0
     crypto_dependencies: int = 0
     malformed_manifests: int = 0
+    artifacts: int = 0
+    certificates: int = 0
+    protocols: int = 0
 
 
 class ScanResponse(BaseModel):

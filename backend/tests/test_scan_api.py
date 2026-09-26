@@ -180,8 +180,18 @@ def test_invalid_pagination_uses_error_envelope(client: TestClient) -> None:
 
 def test_new_tables_exist_without_later_phase_tables(client: TestClient) -> None:
     tables = set(inspect(client.app.state.engine).get_table_names())
-    assert {"projects", "scans", "crypto_findings", "dependencies", "dependency_relationships"} <= tables
-    forbidden = {"certificates", "protocols", "cbom", "migration_plans", "risk_scores", "knowledge_graph"}
+    assert {
+        "projects",
+        "scans",
+        "crypto_findings",
+        "dependencies",
+        "dependency_relationships",
+        "security_artifacts",
+        "cboms",
+        "cbom_components",
+        "cbom_relationships",
+    } <= tables
+    forbidden = {"migration_plans", "risk_scores", "knowledge_graph", "certificates", "protocols", "cbom"}
     assert not tables & forbidden
 
 

@@ -13,6 +13,8 @@ from app.models.project import Project, ProjectStatus
 from app.models.scan import CryptoFinding, Scan, ScanStatus
 from app.schemas.project import RepositoryManifest
 from app.schemas.scan import ScanResponse, ScanSummary
+from app.services.artifacts.persistence import artifact_row
+from app.services.cbom.builder import attach_cbom_children, build_cbom_document, persist_cbom
 from app.services.context.classifier import FindingContext, classify
 from app.services.context.taxonomy import FindingStatus
 from app.services.dependencies.linking import apply_declared_versions, link_all
@@ -66,17 +68,26 @@ def scan_project(session: Session, project: Project, settings: Settings) -> Scan
             _row(project.id, scan.id, finding, context)
             for finding, context in zip(result.findings, contexts)
         ]
+        artifact_rows = [artifact_row(project.id, scan.id, item) for item in result.artifacts]
         session.add_all(dependency_rows)
         session.add_all(finding_rows)
+        session.add_all(artifact_rows)
         session.flush()
-        session.add_all(
-            relationship_rows(
-                scan.id,
-                links,
-                [row.id for row in finding_rows],
-                [row.id for row in dependency_rows],
-            )
+        relationship_models = relationship_rows(
+            scan.id,
+            links,
+            [row.id for row in finding_rows],
+            [row.id for row in dependency_rows],
         )
+        session.add_all(relationship_models)
+        session.flush()
+        document = build_cbom_document(scan, finding_rows, dependency_rows, artifact_rows, relationship_models)
+        cbom, cbom_components, cbom_relationships = persist_cbom(scan, document)
+        session.add(cbom)
+        session.flush()
+        attach_cbom_children(cbom, cbom_components, cbom_relationships)
+        session.add_all(cbom_components)
+        session.add_all(cbom_relationships)
         summary = _summary(result, contexts)
         scan.status = ScanStatus.COMPLETED.value
         scan.summary_json = summary.model_dump_json()
@@ -92,6 +103,7 @@ def scan_project(session: Session, project: Project, settings: Settings) -> Scan
         _fail(session, scan.id)
         raise exc
     except Exception as exc:
+        session.rollback()
         _fail(session, scan.id)
         logger.error("Scan failed project_id=%s error_type=%s", project.id, type(exc).__name__)
         raise AppError("SCAN_FAILED", "The cryptographic scan failed.", status_code=500) from exc
@@ -174,6 +186,9 @@ def _summary(result: ScanRun, contexts: list[FindingContext]) -> ScanSummary:
             if dependency.crypto_relevance == CryptoRelevance.CRYPTOGRAPHIC_LIBRARY.value
         ),
         malformed_manifests=result.malformed_manifests,
+        artifacts=len(result.artifacts),
+        certificates=sum(1 for item in result.artifacts if item.artifact_type == "certificate"),
+        protocols=sum(1 for item in result.artifacts if item.artifact_type in {"protocol", "ssh_config"}),
     )
 
 

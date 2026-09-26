@@ -8,6 +8,8 @@ from pathlib import Path
 
 from app.core.config import Settings
 from app.schemas.project import FileCategory, RepositoryManifest
+from app.services.artifacts.detect import detect_binary_artifacts, detect_text_artifacts, is_artifact_filename
+from app.services.artifacts.types import RawArtifact
 from app.services.dependencies.inventory import build_inventory
 from app.services.dependencies.parsers import parse_manifest
 from app.services.dependencies.types import DeclaredDependency
@@ -58,6 +60,7 @@ class ScanRun:
     def __init__(self) -> None:
         self.findings: list[RawFinding] = []
         self.dependencies: list[DeclaredDependency] = []
+        self.artifacts: list[RawArtifact] = []
         self.manifests: dict[str, dict[str, str]] = {}
         self.malformed_manifests = 0
         self.files_scanned = 0
@@ -84,7 +87,7 @@ def scan_manifest(source_root: Path, manifest: RepositoryManifest, settings: Set
         if path is None:
             run.skip("unsafe_path")
             continue
-        if record.category in {FileCategory.BINARY, FileCategory.DOCUMENTATION, FileCategory.CERTIFICATE}:
+        if record.category == FileCategory.DOCUMENTATION:
             run.skip(record.category.value)
             continue
         if record.file_size > settings.max_file_size_mb * 1024 * 1024:
@@ -93,18 +96,44 @@ def scan_manifest(source_root: Path, manifest: RepositoryManifest, settings: Set
         filename = Path(relative).name.lower()
         is_dependency = record.category == FileCategory.DEPENDENCY or filename in _DEPENDENCY_NAMES
         language = _SOURCE_LANGUAGES.get(Path(relative).suffix.lower())
-        if not is_dependency and language is None:
+        artifact_file = record.category in {FileCategory.CERTIFICATE, FileCategory.CONFIGURATION} or is_artifact_filename(relative)
+        if record.category == FileCategory.BINARY:
+            if not artifact_file:
+                run.skip(record.category.value)
+                continue
+            try:
+                data = path.read_bytes()
+            except OSError:
+                run.skip("unreadable")
+                continue
+            run.files_scanned += 1
+            run.artifacts.extend(detect_binary_artifacts(data, relative, settings))
+            continue
+        if not is_dependency and language is None and not artifact_file:
             run.skip("unsupported_language")
             continue
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
+            if artifact_file:
+                try:
+                    data = path.read_bytes()
+                except OSError:
+                    run.skip("unreadable")
+                    continue
+                run.files_scanned += 1
+                run.artifacts.extend(detect_binary_artifacts(data, relative, settings))
+                continue
             run.skip("binary")
             continue
         except OSError:
             run.skip("unreadable")
             continue
         if "\x00" in text:
+            if artifact_file:
+                run.files_scanned += 1
+                run.artifacts.extend(detect_binary_artifacts(path.read_bytes(), relative, settings))
+                continue
             run.skip("binary")
             continue
         run.files_scanned += 1
@@ -115,11 +144,24 @@ def scan_manifest(source_root: Path, manifest: RepositoryManifest, settings: Set
             if parsed.malformed:
                 run.malformed_manifests += 1
             continue
-        run.findings.extend(_detect_source(text, relative, language or "", settings))
+        if language:
+            run.findings.extend(_detect_source(text, relative, language, settings))
+        if language or artifact_file:
+            run.artifacts.extend(detect_text_artifacts(text, relative, settings))
     run.dependencies = build_inventory(run.dependencies, run.manifests)
     run.findings.extend(dependency_findings(run.dependencies))
     run.findings = dedupe(run.findings)
+    run.artifacts = _dedupe_artifacts(run.artifacts)
     return run
+
+
+def _dedupe_artifacts(artifacts: list[RawArtifact]) -> list[RawArtifact]:
+    chosen: dict[tuple, RawArtifact] = {}
+    for artifact in artifacts:
+        key = artifact.dedupe_key()
+        if key not in chosen:
+            chosen[key] = artifact
+    return sorted(chosen.values(), key=lambda item: (item.file_path, item.line_start, item.artifact_type))
 
 
 def dedupe(findings: list[RawFinding]) -> list[RawFinding]:

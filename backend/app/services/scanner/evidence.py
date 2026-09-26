@@ -19,7 +19,11 @@ _SECRET_ASSIGNMENT = re.compile(
     r"""(?ix)
     (\b[\w\-]*(?:password|passwd|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key
         |private[_\-]?key|client[_\-]?secret|credential)s?[\w\-]*["']?\s*[:=]\s*)
-    ([bru]{0,2})("[^"\n]*"|'[^'\n]*')
+    (?:
+        ([bru]{0,2})("[^"\n]*"|'[^'\n]*')
+        |
+        ([^\s#;]+)
+    )
     """
 )
 _URL_CREDENTIALS = re.compile(r"(?i)\b([a-z][a-z0-9+.\-]*://)[^/@\s:]+:[^/@\s]+@")
@@ -29,13 +33,16 @@ _TOKEN_FORMATS = re.compile(
 )
 
 
+def _redact_assignment(match: re.Match[str]) -> str:
+    if match.group(3):
+        return f"{match.group(1)}{match.group(2)}{match.group(3)[0]}{REDACTED}{match.group(3)[0]}"
+    return f"{match.group(1)}{REDACTED}"
+
+
 def redact_secrets(text: str) -> str:
     """Remove values that look like credentials before evidence is stored."""
-    redacted = _PRIVATE_KEY_BLOCK.sub("[REDACTED PRIVATE KEY]", text)
-    redacted = _SECRET_ASSIGNMENT.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)[0]}{REDACTED}{match.group(3)[0]}",
-        redacted,
-    )
+    redacted = _PRIVATE_KEY_BLOCK.sub("[REDACTED PRIVATE KEY BLOCK]", text)
+    redacted = _SECRET_ASSIGNMENT.sub(_redact_assignment, redacted)
     redacted = _URL_CREDENTIALS.sub(lambda match: f"{match.group(1)}{REDACTED}@", redacted)
     return _TOKEN_FORMATS.sub(REDACTED, redacted)
 

@@ -2,13 +2,13 @@
 
 ## Overview
 
-CryptoNex is a platform for post-quantum cryptography migration and crypto-agility. Phase 1 ingests a public GitHub repository or a ZIP archive into an isolated workspace and records a file manifest. Phase 2 runs deterministic static analysis on that manifest and records evidence-backed cryptographic findings. Phase 3 attaches deterministic evidence, confidence, and cryptographic context to those findings. Phase 4 builds a static dependency inventory and links source findings to declared packages. CryptoNex does not execute repository code.
+CryptoNex is a platform for post-quantum cryptography migration and crypto-agility. Phase 1 ingests a repository. Phase 2 detects cryptographic usage. Phase 3 adds evidence and context. Phase 4 inventories dependencies. Phase 5 detects certificates, TLS, and SSH configuration. Phase 6 builds a CryptoNex CBOM. Phase 7 exposes a queryable knowledge graph. CryptoNex does not execute repository code and does not claim an application is quantum-safe merely because a primitive was or was not detected.
 
 ## Current Phase
 
-Phase 4 — Dependency Intelligence
+Phase 7 — Crypto Knowledge Graph
 
-The API still exposes `GET /api/v1/health`. A project can be created from a public GitHub HTTPS URL or a ZIP upload, then ingested with `POST /api/v1/projects/{id}/ingest`. After ingestion succeeds, `POST /api/v1/projects/{id}/scan` runs detection, context classification, and dependency inventory together and returns a scan summary. Stored scans can be read from `GET /api/v1/scans/{scan_id}`, `GET /api/v1/scans/{scan_id}/findings`, and `GET /api/v1/scans/{scan_id}/dependencies`. This is deterministic static analysis. It does not establish that a system is quantum-safe or quantum-vulnerable.
+`POST /api/v1/projects/{id}/scan` still runs the full pipeline. After a scan completes, the backend can return findings, dependencies, security artifacts, a CBOM, an inventory, and a knowledge graph. This is deterministic static analysis of repository text. It does not prove runtime behavior and does not establish that a system is quantum-safe or quantum-vulnerable.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ Later phases can add routes, services, and models beside this layout without cha
 │   │   ├── core/            # settings, logging, database, errors
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── schemas/         # API request and response models
-│   │   ├── services/        # health, ingestion, scanning, context, dependencies
+│   │   ├── services/        # ingestion, scanning, context, dependencies, artifacts, CBOM, graph
 │   │   └── main.py          # application factory
 │   ├── tests/
 │   ├── requirements.txt
@@ -376,9 +376,45 @@ A Dependency row is the declared dependency. `crypto_relevance` plus `library` i
 
 Dependency analysis reads manifest text. It does not run `pip`, `npm`, Maven, Gradle, `go get`, or Cargo, and it does not consult CVE, NVD, OSV, or GitHub Advisory databases.
 
+## Certificate, TLS, and SSH Intelligence
+
+Phase 5 reads the Phase 1 manifest and inspects certificate files, configuration files, and source text. It does not open network connections, perform TLS handshakes, speak SSH, download certificates, or use private keys.
+
+Detected artifacts include PEM certificates and keys, DER certificates, PKCS#12 and JKS containers, Java `keyStore`/`trustStore` references, TLS versions, cipher suites, mTLS flags, and SSH algorithms or public keys.
+
+PEM private-key bodies are never stored. Evidence is replaced with `[REDACTED PRIVATE KEY BLOCK]`. Certificate metadata such as subject, issuer, serial, validity, SAN, public-key algorithm, key size, and curve is extracted from DER when the encoding is well-formed. Password-protected keystores are not opened.
+
+TLS versions are recorded only when they appear explicitly (`TLSv1.2`, `TLSv1.3`). CryptoNex does not infer a runtime default. Cipher-suite names are stored exactly; key exchange, authentication, cipher, mode, and hash are filled only when the name encodes them.
+
+Documentation and comments are not confirmed artifacts. A `.key` file is a private key only when its contents contain a PEM or container signature.
+
+`GET /api/v1/scans/{scan_id}/artifacts` lists persisted artifacts.
+
+## CryptoNex CBOM and Inventory
+
+Phase 6 builds a CryptoNex CBOM from stored findings, dependencies, and artifacts. It does not rescan the repository. The schema is `cryptonex-cbom` version `1.0`. It is not a CycloneDX CBOM.
+
+`GET /api/v1/scans/{scan_id}/cbom` returns `schema_version`, scan identifiers, `summary`, `components`, and `relationships`. Component types include `algorithm`, `crypto_usage`, `library`, `dependency`, `certificate`, `key`, `protocol`, and `cipher_suite`. Relationships include `uses`, `declared_by`, `located_in`, and `depends_on`.
+
+`GET /api/v1/scans/{scan_id}/cbom/export` returns the same document as a JSON attachment.
+
+`GET /api/v1/scans/{scan_id}/inventory` aggregates algorithm counts, libraries, dependency names, certificate counts, protocol labels, cipher suites, and source paths from stored rows.
+
+## Crypto Knowledge Graph
+
+Phase 7 builds an in-memory graph from the same stored records and the CBOM. There is no graph database.
+
+Node types: `project`, `scan`, `file`, `crypto_finding`, `algorithm`, `crypto_library`, `dependency`, `certificate`, `key`, `protocol`, `cipher_suite`, `component`.
+
+Edges include `HAS_SCAN`, `CONTAINS_FINDING`, `USES_ALGORITHM`, `USES_LIBRARY`, `LOCATED_IN`, `PROVIDED_BY`, `DECLARED_IN`, `USES_DEPENDENCY`, and `USES_CIPHER_SUITE`.
+
+`GET /api/v1/scans/{scan_id}/graph` returns `nodes`, `edges`, and `summary`. Optional filters: `node_type`, `algorithm`, `file_path`, `dependency`.
+
+The graph is blast-radius ready: an algorithm can be followed to findings, files, and dependencies, and a protocol can be followed to cipher suites and algorithms. It does not compute a migration blast radius yet.
+
 ## Security Baseline
 
-- Repository contents are untrusted. The scanner reads and parses text. It does not execute repository code, import repository modules, or run commands derived from repository content.
+- Repository contents are untrusted. The scanner reads and parses text. It does not execute repository code, import repository modules, run commands derived from repository content, connect to hosts, or load private keys.
 - Request bodies are validated with Pydantic where a route accepts JSON input.
 - ZIP uploads are read with a size cap and are not executed.
 - Error responses use one JSON envelope and do not include stack traces or exception text.
